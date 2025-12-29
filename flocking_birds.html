@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Flocking Birds – An Octonionic Simulation</title>
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+    font-family: system-ui, sans-serif;
+  }
+
+  #ui {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(0,0,0,0.65);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 12px;
+    border-radius: 8px;
+    color: #eee;
+    font-size: 14px;
+    z-index: 10;
+  }
+
+  #ui label {
+    display: block;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+
+  #ui input {
+    width: 100%;
+  }
+
+  #ui button {
+    margin-top: 8px;
+    width: 100%;
+    background: #222;
+    color: #eee;
+    border: 1px solid #555;
+    padding: 6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  #title {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    color: #ddd;
+    font-size: 16px;
+    text-align: right;
+  }
+
+  #basedOn {
+    position: absolute;
+    top: 34px;
+    right: 16px;
+    font-size: 12px;
+    opacity: 0.75;
+    text-align: right;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+  <label>
+    Number of Birds
+    <input id="birdCount" type="range" min="20" max="300" value="100">
+    <span id="birdCountVal">100</span>
+  </label>
+  <button id="startBtn">Start Simulation</button>
+  <button id="stopBtn">Stop</button>
+  <button id="resetBtn">Reset</button>
+</div>
+
+<div id="title">Flocking Birds – An Octonionic Simulation</div>
+<div id="basedOn">
+  (based on <a href="https://arxiv.org/pdf/0709.1916" target="_blank" style="color:#9ad;">arXiv:0709.1916</a>)
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+<script>
+/* ============================================================
+   Math helpers
+============================================================ */
+function norm(v){
+  const n = Math.hypot(v[0],v[1],v[2]) || 1e-6;
+  return [v[0]/n, v[1]/n, v[2]/n];
+}
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const mul=(v,s)=>[v[0]*s,v[1]*s,v[2]*s];
+
+/* ============================================================
+   Octonion3D
+============================================================ */
+class Octonion3D {
+  constructor(neighborVels){
+    this.v = Array(8).fill(0);
+    for(let i=0;i<Math.min(7,neighborVels.length);i++){
+      const v = neighborVels[i];
+      const yaw = Math.atan2(v[1],v[0]);
+      const pitch = Math.atan2(v[2],Math.hypot(v[0],v[1]));
+      this.v[i+1] = yaw + pitch;
+    }
+  }
+
+  static qMul(x,y){
+    return [
+      x[0]*y[0]-x[1]*y[1]-x[2]*y[2]-x[3]*y[3],
+      x[0]*y[1]+x[1]*y[0]+x[2]*y[3]-x[3]*y[2],
+      x[0]*y[2]-x[1]*y[3]+x[2]*y[0]+x[3]*y[1],
+      x[0]*y[3]+x[1]*y[2]-x[2]*y[1]+x[3]*y[0]
+    ];
+  }
+
+  static qConj(x){ return [x[0],-x[1],-x[2],-x[3]]; }
+
+  static mul(q,r){
+    const a=q.slice(0,4), b=q.slice(4);
+    const c=r.slice(0,4), d=r.slice(4);
+    const t1=this.qMul(a,c);
+    const t2=this.qMul(this.qConj(d),b);
+    const t3=this.qMul(d,a);
+    const t4=this.qMul(b,this.qConj(c));
+    return [
+      t1[0]-t2[0],t1[1]-t2[1],t1[2]-t2[2],t1[3]-t2[3],
+      t3[0]+t4[0],t3[1]+t4[1],t3[2]+t4[2],t3[3]+t4[3]
+    ];
+  }
+
+  getDirection(){
+    let res = Array(8).fill(0);
+    for(let i=1;i<8;i++){
+      const u = Array(8).fill(0); u[i]=1;
+      const m = Octonion3D.mul(this.v,u);
+      for(let k=0;k<8;k++) res[k]+=m[k];
+    }
+    return norm([res[1],res[2],res[3]]);
+  }
+}
+
+/* ============================================================
+   Flock Simulation
+============================================================ */
+class Flock {
+  constructor(n,size=200){
+    this.n=n; this.size=size;
+    this.pos=[]; this.vel=[];
+    this.timer=0;
+    this.steer=norm([Math.random()-0.5,Math.random()-0.5,Math.random()-0.5]);
+
+    for(let i=0;i<n;i++){
+      this.pos.push([
+        (Math.random()-0.5)*size,
+        (Math.random()-0.5)*size,
+        (Math.random()-0.5)*size
+      ]);
+      this.vel.push(norm([
+        Math.random()-0.5,
+        Math.random()-0.5,
+        Math.random()-0.5
+      ]));
+    }
+  }
+
+  neighbors(i,k=7){
+    return [...this.pos.keys()]
+      .filter(j=>j!==i)
+      .map(j=>{
+        const d=sub(this.pos[i],this.pos[j]);
+        return {j,d:d[0]*d[0]+d[1]*d[1]+d[2]*d[2]};
+      })
+      .sort((a,b)=>a.d-b.d)
+      .slice(0,k)
+      .map(o=>o.j);
+  }
+
+  update(){
+    this.timer++;
+    if(this.timer>40){
+      this.steer=mul(norm([
+        Math.random()-0.5,
+        Math.random()-0.5,
+        Math.random()-0.5
+      ]),2.5);
+      this.timer=0;
+    }
+
+    const newVel=[];
+    for(let i=0;i<this.n;i++){
+      const idx=this.neighbors(i);
+      const O=new Octonion3D(idx.map(j=>this.vel[j]));
+      const align=O.getDirection();
+
+      let coh=[0,0,0], sep=[0,0,0];
+      idx.forEach(j=>{
+        coh=add(coh,this.pos[j]);
+        const d=sub(this.pos[i],this.pos[j]);
+        const m=Math.hypot(...d);
+        if(m<8) sep=add(sep,mul(d,1/(m+0.1)));
+      });
+      coh=mul(sub(mul(coh,1/idx.length),this.pos[i]),0.08);
+
+      let avoid=[0,0,0];
+      const lim=this.size/2-20;
+      for(let d=0;d<3;d++){
+        if(this.pos[i][d]<-lim) avoid[d]=2;
+        else if(this.pos[i][d]>lim) avoid[d]=-2;
+      }
+
+      let steer=[0,0,0];
+      steer=add(steer,mul(align,1.4));
+      steer=add(steer,mul(coh,0.6));
+      steer=add(steer,mul(sep,3.5));
+      steer=add(steer,mul(avoid,4.0));
+      steer=add(steer,mul(this.steer,0.8));
+
+      newVel[i]=norm(add(this.vel[i],mul(steer,0.18)));
+    }
+
+    this.vel=newVel;
+    for(let i=0;i<this.n;i++)
+      this.pos[i]=add(this.pos[i],mul(this.vel[i],2.0));
+  }
+}
+
+/* ============================================================
+   Three.js Scene
+============================================================ */
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x000000);
+
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,1000);
+camera.position.set(300,250,300);
+camera.lookAt(0,0,0);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+/* Cube */
+const size=200;
+const edges=new THREE.EdgesGeometry(new THREE.BoxGeometry(size,size,size));
+scene.add(new THREE.LineSegments(
+  edges,
+  new THREE.LineBasicMaterial({color:0xffffff,opacity:0.25,transparent:true})
+));
+
+let flock=null, arrows=[], running=false;
+
+/* ============================================================
+   UI
+============================================================ */
+const slider=document.getElementById("birdCount");
+const label=document.getElementById("birdCountVal");
+label.textContent=slider.value;
+slider.oninput=()=>label.textContent=slider.value;
+
+function initFlock(){
+  arrows.forEach(a=>scene.remove(a));
+  arrows=[];
+  flock=new Flock(+slider.value);
+
+  for(let i=0;i<flock.n;i++){
+    const a=new THREE.ArrowHelper(
+      new THREE.Vector3(1,0,0),
+      new THREE.Vector3(),
+      6,
+      new THREE.Color().setHSL(i/flock.n,1,0.6)
+    );
+    arrows.push(a);
+    scene.add(a);
+  }
+}
+
+startBtn.onclick=()=>{ if(!flock) initFlock(); running=true; };
+stopBtn.onclick=()=>running=false;
+resetBtn.onclick=()=>{ running=false; initFlock(); };
+
+/* ============================================================
+   Loop
+============================================================ */
+function animate(){
+  requestAnimationFrame(animate);
+  if(running && flock){
+    flock.update();
+    for(let i=0;i<flock.n;i++){
+      arrows[i].position.set(...flock.pos[i]);
+      arrows[i].setDirection(new THREE.Vector3(...flock.vel[i]));
+    }
+  }
+  renderer.render(scene,camera);
+}
+animate();
+
+window.onresize=()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+};
+</script>
+
+</body>
+</html>
