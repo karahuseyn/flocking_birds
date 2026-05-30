@@ -1,0 +1,4 @@
+# fetched training data (downloaded on demand by octonion_lm.py)
+corpus.txt
+__pycache__/
+*.pyc
