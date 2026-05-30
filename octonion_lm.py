@@ -421,7 +421,30 @@ def _build_science(max_chars):
         i += 1
     return "\n".join(out)[:max_chars]
 
-CORPORA = {"shakespeare": _build_shakespeare, "science": _build_science}
+def _build_biomed(max_chars):
+    """A large *single-domain* biomedical corpus: PubMed 200k RCT clinical-trial
+    abstracts (~335M chars cleaned).  Single domain keeps generation on-topic;
+    needs `py7zr` to unpack the upstream .7z."""
+    import io, glob, tempfile
+    try:
+        import py7zr
+    except ImportError:
+        raise SystemExit("biomed corpus needs py7zr -- `pip install py7zr`")
+    print("  fetching PubMed 200k RCT (clinical-trial abstracts, ~67MB .7z)...")
+    req = urllib.request.Request(f"{RAW}/Franck-Dernoncourt/pubmed-rct/master/"
+                                 "PubMed_200k_RCT/train.7z",
+                                 headers={"User-Agent": "Mozilla/5.0"})
+    data = urllib.request.urlopen(req, timeout=180).read()
+    with tempfile.TemporaryDirectory() as d:
+        with py7zr.SevenZipFile(io.BytesIO(data)) as z:
+            z.extractall(path=d)
+        raw = open(glob.glob(f"{d}/**/*.txt", recursive=True)[0],
+                   encoding="utf-8", errors="ignore").read()
+    sents = [ln.split("\t", 1)[1].strip() for ln in raw.split("\n") if "\t" in ln]
+    return "\n".join(sents)[:max_chars]
+
+CORPORA = {"shakespeare": _build_shakespeare, "science": _build_science,
+           "biomed": _build_biomed}
 
 def collect_data(corpus="shakespeare", max_chars=10_000_000):
     path = os.path.join(HERE, f"corpus_{corpus}.txt")
