@@ -147,13 +147,17 @@ Building a 30–60M-context memory bank is made tractable by:
   so the full `(N × ctx)` window array is never materialised.
 - **Compact memory** — `int16` ids, packed bipolar codes, and an `int32` LSH index.
 
-Measured (this repo's 15 GB dev box, 4 cores, no backprop):
+Measured (this repo's 15 GB dev box, 4 cores, no backprop), next-char accuracy:
 
 ```
-Science, 30M contexts : 66.1% acc, 1.9 GB RAM, ~8 min build, ~68 ms/char (ANN)
-Science, 60M contexts : ~66%  acc, ~4–8 GB RAM, ~15 min build
+Science,  1.5M contexts : 64.5%  (baseline ~16%)   ~4 ms/char
+Science,   30M contexts : 66.1%  ( 1.9 GB RAM )    ~8 min build,  ~68 ms/char
+Science,   60M contexts : 72.7%  ( 7.9 GB RAM )   ~16 min build, ~180 ms/char
 ```
 
+Accuracy keeps climbing with data (64→73%), with no training in the usual sense —
+just more contexts to recall from. Recall slows as the buckets fill up, so raise
+`--lsh-bits` (more, smaller buckets) to trade a little recall for speed at scale.
 The built bank is cached, so re-serving the same corpus is instant. Pushing to
 ~100M is possible but bumps into the RAM ceiling — drop `--lsh-tables` to fit.
 
