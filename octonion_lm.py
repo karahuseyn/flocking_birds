@@ -339,14 +339,14 @@ class OctonionFanoLM:
                     cand = self.lsh.query(qb[i])
                     if len(cand) >= k:
                         ham = np.bitwise_count(self.memb[cand] ^ qb[i]).sum(1)
-                        loc = np.argpartition(ham, k)[:k]
+                        loc = np.argpartition(ham, k - 1)[:k]
                         idx, hsel = cand[loc], ham[loc]
                     else:                                  # rare empty/thin bucket
                         ham = np.bitwise_count(self.memb ^ qb[i]).sum(1)
-                        idx = np.argpartition(ham, k)[:k]; hsel = ham[idx]
+                        idx = np.argpartition(ham, k - 1)[:k]; hsel = ham[idx]
                 else:
                     ham = np.bitwise_count(self.memb ^ qb[i]).sum(1)
-                    idx = np.argpartition(ham, k)[:k]; hsel = ham[idx]
+                    idx = np.argpartition(ham, k - 1)[:k]; hsel = ham[idx]
                 w = np.maximum(self.D - 2.0 * hsel, 0.0)   # bipolar similarity
                 np.add.at(out[i], self.tgt[idx], w)
             return out
