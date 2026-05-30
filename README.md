@@ -76,8 +76,13 @@ Learning is purely associative (hyperdimensional / Vector-Symbolic computing):
 
 ### Data
 
-`octonion_lm.py` collects its corpus on demand — the public-domain
-*tinyShakespeare* text — and caches it to `corpus.txt` (git-ignored).
+`octonion_lm.py` collects its corpus on demand and caches it (git-ignored). Two
+corpora are built in:
+
+- `--corpus shakespeare` — the public-domain *tinyShakespeare* text (~1.1M chars).
+- `--corpus science` — a multi-domain **scientific** corpus (~10M chars): PubMed RCT
+  abstracts (biology / medicine) mixed with arXiv abstracts (math / CS / AI),
+  cleaned to plain prose.
 
 ### Run
 
@@ -86,11 +91,11 @@ pip install numpy
 
 # demo: train, evaluate, print a sample
 python3 octonion_lm.py                       # ~150k chars, context 12
-python3 octonion_lm.py --chars 0 --ctx 16    # whole corpus (~1.1M chars), longer context
+python3 octonion_lm.py --chars 0 --ctx 16    # whole Shakespeare corpus, longer context
 
 # interactive: write your own prompts in the browser
-python3 octonion_lm.py serve                 # trains on the whole corpus, opens a prompt UI
-python3 octonion_lm.py serve --ctx 12 --slots 96 --port 8000
+python3 octonion_lm.py serve                 # whole Shakespeare corpus, prompt UI
+python3 octonion_lm.py serve --corpus science    # ~10M-char science corpus (binary + ANN)
 ```
 
 `serve` trains the associative memory once at startup (no backprop), then hosts a
@@ -110,6 +115,22 @@ cost of only ~1.5 points of accuracy.
 ```bash
 python3 octonion_lm.py serve                  # whole corpus, binary memory (default)
 python3 octonion_lm.py serve --backend float  # faster recall, ~2.3 GB RAM, slightly more accurate
+```
+
+### Approximate nearest neighbours (LSH)
+
+Exact Hamming search scans the whole memory for every character — fine at ~1M
+contexts, but the ~10M-context science corpus needs **approximate** search. `serve`
+builds a **bit-sampling LSH** index over the bipolar memory (`--ann` is on by default
+for `serve`): contexts are bucketed by random subsets of their bits, so a query only
+scores the handful of candidates sharing a bucket, instead of all 10M. The built
+memory bank is cached to a `.memcache_*.npz` file so re-serving the same corpus is
+instant.
+
+```bash
+python3 octonion_lm.py serve --corpus science                    # binary + LSH (default)
+python3 octonion_lm.py serve --corpus science --lsh-bits 22 --lsh-tables 8
+python3 octonion_lm.py serve --corpus science --no-ann            # exact (slow at 10M)
 ```
 
 Typical result on ~400k training characters (vocabulary 65, no backprop):

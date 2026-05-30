@@ -1,4 +1,7 @@
 # fetched training data (downloaded on demand by octonion_lm.py)
 corpus.txt
+corpus_*.txt
+# cached binary memory banks
+.memcache_*.npz
 __pycache__/
 *.pyc

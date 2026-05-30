@@ -34,7 +34,7 @@ Usage:
     python3 octonion_lm.py serve                 # interactive prompt UI in the browser
 """
 
-import argparse, os, json, time, threading, webbrowser, urllib.request
+import argparse, os, json, time, hashlib, threading, webbrowser, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
@@ -172,6 +172,49 @@ class FanoEncoder:
         return flat / np.where(n > 1e-9, n, 1.0)
 
 # --------------------------------------------------------------------------
+# Approximate nearest neighbours for the bipolar memory (bit-sampling LSH).
+#
+# Exact Hamming search scans the whole memory per character -- fine at ~1M
+# contexts, far too slow at ~10M.  Locality-sensitive hashing buckets contexts
+# by a random subset of their bits: near neighbours (few differing bits) tend
+# to land in the same bucket.  A query only Hamming-scores the handful of
+# candidates sharing a bucket in any of L tables.  No training -- just hashing.
+# --------------------------------------------------------------------------
+class LSHIndex:
+    def __init__(self, memb, dims, bits=20, tables=6, seed=1916):
+        rng = np.random.default_rng(seed)
+        self.bits = min(bits, 63)
+        self.tables = []
+        for _ in range(tables):
+            pos = rng.choice(dims, size=self.bits, replace=False)
+            keys = self._project(memb, pos)               # (N,) uint64 bucket key
+            order = np.argsort(keys, kind="stable")
+            self.tables.append((pos, keys[order], order))
+
+    def _project(self, memb, pos):
+        """Gather the chosen bit positions out of the packed codes -> one int key."""
+        words = (pos // 64).astype(np.int64)
+        offs = (pos % 64).astype(np.uint64)
+        key = np.zeros(memb.shape[0], dtype=np.uint64)
+        for i in range(len(pos)):
+            bit = (memb[:, words[i]] >> offs[i]) & np.uint64(1)
+            key |= bit << np.uint64(i)
+        return key
+
+    def query(self, code):
+        """code: (W,) uint64 -> candidate indices sharing a bucket in any table."""
+        cands = []
+        for pos, keys_sorted, order in self.tables:
+            qk = self._project(code[None], pos)[0]
+            lo = np.searchsorted(keys_sorted, qk, "left")
+            hi = np.searchsorted(keys_sorted, qk, "right")
+            if hi > lo:
+                cands.append(order[lo:hi])
+        if not cands:
+            return np.empty(0, dtype=np.int64)
+        return np.unique(np.concatenate(cands))
+
+# --------------------------------------------------------------------------
 # The model: gradient-free associative memory in octonion hyperspace.
 #
 # "Training" stores every context as a Fano-encoded hypervector (an instance
@@ -181,12 +224,16 @@ class FanoEncoder:
 # in the same roles are neighbours -> a fuzzy, holographic n-gram.
 # --------------------------------------------------------------------------
 class OctonionFanoLM:
-    def __init__(self, vocab_size, slots=64, ctx=5, topk=5, decay=0.65):
+    def __init__(self, vocab_size, slots=64, ctx=5, topk=5, decay=0.65,
+                 backend="float", ann=False, lsh_bits=20, lsh_tables=6):
         self.enc = FanoEncoder(vocab_size, slots, ctx, decay=decay)
         self.V, self.ctx, self.topk = vocab_size, ctx, topk
         self.D = slots * 8
         self.W = (self.D + 63) // 64          # uint64 words per packed context
-        self.backend = "float"
+        self.backend = backend
+        self.use_ann = ann
+        self.lsh_bits, self.lsh_tables = lsh_bits, lsh_tables
+        self.lsh = None
 
     def _windows(self, ids):
         """All (context, target) pairs. windows (N,ctx) col0 = most recent."""
@@ -207,9 +254,13 @@ class OctonionFanoLM:
         """Single gradient-free pass: memorise the Fano-encoded contexts and
         their successors.  This is the entire learning procedure."""
         win, self.tgt = self._windows(ids)
-        self.mem = self._encode_all(win)                   # (Nmem, D) float rows
         self.unigram = np.bincount(self.tgt, minlength=self.V).astype(float)
         self.unigram /= self.unigram.sum()
+        if self.backend == "binary":
+            self.memb = self._build_binary(win)            # packed, memory-light
+            self._build_ann()
+        else:
+            self.mem = self._encode_all(win)               # (Nmem, D) float rows
 
     def _pack(self, vecs):
         """(N, D) float -> (N, W) uint64 of sign bits (a bipolar hypervector)."""
@@ -217,13 +268,29 @@ class OctonionFanoLM:
         bits[:, :self.D] = (vecs > 0)
         return np.packbits(bits, axis=1).view(np.uint64)
 
-    def finalize_binary(self):
-        """Compress the memory to 1-bit-per-dimension bipolar hypervectors
-        (32x smaller) so the whole corpus fits in tens of MB.  Recall then uses
-        Hamming distance via popcount instead of float cosine."""
-        self.memb = self._pack(self.mem)
-        del self.mem
+    def _build_binary(self, win, bs=16384):
+        """Encode + sign-pack in chunks so the float memory is never fully
+        materialised -- this is what lets a ~10M-context corpus fit in RAM."""
+        out = np.empty((len(win), self.W), dtype=np.uint64)
+        for s in range(0, len(win), bs):
+            f = self.enc.encode_window(win[s:s + bs]).astype(np.float32)
+            out[s:s + bs] = self._pack(f)
+        return out
+
+    def _build_ann(self):
+        self.lsh = (LSHIndex(self.memb, self.D, self.lsh_bits, self.lsh_tables)
+                    if self.use_ann else None)
+
+    def save_memory(self, path):
+        """Cache the (slow-to-build) binary memory so restarts are instant.
+        The LSH index is cheap and is rebuilt on load."""
+        np.savez(path, memb=self.memb, tgt=self.tgt, unigram=self.unigram)
+
+    def load_memory(self, path):
+        d = np.load(path)
+        self.memb, self.tgt, self.unigram = d["memb"], d["tgt"], d["unigram"]
         self.backend = "binary"
+        self._build_ann()
 
     def _votes(self, windows, bs=512):
         """Similarity-weighted next-char votes from the k nearest contexts."""
@@ -232,9 +299,19 @@ class OctonionFanoLM:
         if self.backend == "binary":
             qb = self._pack(self.enc.encode_window(windows).astype(np.float32))
             for i in range(len(windows)):
-                ham = np.bitwise_count(self.memb ^ qb[i]).sum(1)   # Hamming, (Nmem,)
-                idx = np.argpartition(ham, k)[:k]
-                w = np.maximum(self.D - 2.0 * ham[idx], 0.0)       # bipolar similarity
+                if self.lsh is not None:
+                    cand = self.lsh.query(qb[i])
+                    if len(cand) >= k:
+                        ham = np.bitwise_count(self.memb[cand] ^ qb[i]).sum(1)
+                        loc = np.argpartition(ham, k)[:k]
+                        idx, hsel = cand[loc], ham[loc]
+                    else:                                  # rare empty/thin bucket
+                        ham = np.bitwise_count(self.memb ^ qb[i]).sum(1)
+                        idx = np.argpartition(ham, k)[:k]; hsel = ham[idx]
+                else:
+                    ham = np.bitwise_count(self.memb ^ qb[i]).sum(1)
+                    idx = np.argpartition(ham, k)[:k]; hsel = ham[idx]
+                w = np.maximum(self.D - 2.0 * hsel, 0.0)   # bipolar similarity
                 np.add.at(out[i], self.tgt[idx], w)
             return out
         for s in range(0, len(windows), bs):
@@ -272,66 +349,97 @@ class OctonionFanoLM:
         return out
 
 # --------------------------------------------------------------------------
-# Data collection
+# Data collection -- several corpora, fetched on demand from GitHub-hosted,
+# public sources and cached next to this file.
 # --------------------------------------------------------------------------
-DATA_URL = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
-CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus.txt")
+HERE = os.path.dirname(os.path.abspath(__file__))
+RAW = "https://raw.githubusercontent.com"
 
-def collect_data():
-    if os.path.exists(CACHE):
-        with open(CACHE, encoding="utf-8") as f:
+def _fetch(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    return urllib.request.urlopen(req, timeout=120).read().decode("utf-8", "replace")
+
+def _build_shakespeare(max_chars):
+    return _fetch(f"{RAW}/karpathy/char-rnn/master/data/tinyshakespeare/input.txt")
+
+def _build_science(max_chars):
+    """A multi-domain scientific corpus: PubMed RCT abstracts (biology/medicine)
+    mixed with arXiv abstracts (CS / AI / vision).  Cleaned to plain prose."""
+    print("  fetching PubMed RCT abstracts (biology/medicine)...")
+    pm = _fetch(f"{RAW}/Franck-Dernoncourt/pubmed-rct/master/PubMed_20k_RCT/train.txt")
+    bio = "\n".join(ln.split("\t", 1)[1].strip() for ln in pm.split("\n") if "\t" in ln)
+    print("  fetching arXiv abstracts (math / CS / AI)...")
+    arx = "\n".join(_fetch(f"{RAW}/gcunhase/ArXivAbsTitleDataset/master/results/" + f)
+                    for f in ["artificial%20intelligence_10047_15000_15_abs.txt",
+                              "computer%20vision_14582_15000_15_abs.txt",
+                              "language%20generation_14514_15000_15_abs.txt"])
+    half = max_chars // 2
+    return bio[:half].strip() + "\n\n" + arx[:max_chars - half].strip()
+
+CORPORA = {"shakespeare": _build_shakespeare, "science": _build_science}
+
+def collect_data(corpus="shakespeare", max_chars=10_000_000):
+    path = os.path.join(HERE, f"corpus_{corpus}.txt")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
             return f.read()
-    print(f"collecting data: {DATA_URL}")
-    req = urllib.request.Request(DATA_URL, headers={"User-Agent": "Mozilla/5.0"})
-    text = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
-    with open(CACHE, "w", encoding="utf-8") as f:
+    print(f"collecting '{corpus}' corpus (cached to {os.path.basename(path)})...")
+    text = CORPORA[corpus](max_chars)
+    with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     return text
 
 # --------------------------------------------------------------------------
 # Shared setup
 # --------------------------------------------------------------------------
-def build_corpus():
-    text = collect_data()
+def build_corpus(corpus="shakespeare", max_chars=10_000_000):
+    text = collect_data(corpus, max_chars)
     chars = sorted(set(text))
     stoi = {c: i for i, c in enumerate(chars)}
     itos = {i: c for c, i in stoi.items()}
     ids = np.array([stoi[c] for c in text], dtype=np.int64)
     return text, stoi, itos, len(chars), ids
 
-def train_model(ids, V, slots, ctx, topk, n_chars, decay):
+def make_model(args, V):
+    return OctonionFanoLM(V, slots=args.slots, ctx=args.ctx, topk=args.topk,
+                          decay=args.decay, backend=args.backend, ann=args.ann,
+                          lsh_bits=args.lsh_bits, lsh_tables=args.lsh_tables)
+
+def train_model(args, ids, V, n_chars):
     train_ids = ids if n_chars <= 0 else ids[:n_chars]
-    model = OctonionFanoLM(V, slots=slots, ctx=ctx, topk=topk, decay=decay)
-    print(f"training on {len(train_ids):,} chars  "
-          f"(hypervector {slots} octonions = {slots*8} dims, context {ctx}, decay {decay})...")
+    model = make_model(args, V)
+    print(f"training on {len(train_ids):,} chars  (hypervector {args.slots} octonions "
+          f"= {model.D} dims, context {args.ctx}, decay {args.decay}, backend {args.backend}"
+          f"{', ANN' if args.ann else ''})...")
     t = time.time()
     model.train(train_ids)
-    print(f"memory bank: {model.mem.shape[0]:,} contexts x {model.D} dims "
-          f"({model.mem.nbytes/1e6:.0f} MB)  built in {time.time()-t:.1f}s")
+    if model.backend == "binary":
+        print(f"memory bank: {model.memb.shape[0]:,} contexts x {model.D} bits "
+              f"({model.memb.nbytes/1e6:.0f} MB packed)  built in {time.time()-t:.1f}s")
+    else:
+        print(f"memory bank: {model.mem.shape[0]:,} contexts x {model.D} dims "
+              f"({model.mem.nbytes/1e6:.0f} MB)  built in {time.time()-t:.1f}s")
     return model
 
 # --------------------------------------------------------------------------
 # Command: demo  (train, evaluate, print a sample)
 # --------------------------------------------------------------------------
 def cmd_demo(args):
-    text, stoi, itos, V, ids = build_corpus()
-    print(f"vocab={V}  total_chars={len(ids):,}")
+    text, stoi, itos, V, ids = build_corpus(args.corpus, args.max_chars)
+    print(f"corpus={args.corpus}  vocab={V}  total_chars={len(ids):,}")
     print("Fano lines (from the multiplication table):")
     for ln in fano_lines():
         print("   {%d, %d, %d}" % ln)
-    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars, args.decay)
+    model = train_model(args, ids, V, args.chars)
 
     n_train = len(ids) if args.chars <= 0 else args.chars
     eval_ids = ids[n_train:n_train + args.eval]
     if len(eval_ids) > args.ctx + 1:
         acc, base = model.evaluate(eval_ids)
-        print(f"\nnext-char top-1 accuracy : {acc*100:5.2f}%   (k={args.topk} nearest contexts)")
+        tag = "ANN" if args.ann else "exact"
+        print(f"\nnext-char top-1 accuracy : {acc*100:5.2f}%   (k={args.topk}, {tag})")
         print(f"most-frequent-char base  : {base*100:5.2f}%")
         print(f"lift over baseline       : x{acc/base:4.2f}")
-
-    if args.backend == "binary":
-        model.finalize_binary()
-        print(f"packed memory: {model.memb.nbytes/1e6:.0f} MB bipolar hypervectors")
 
     gen = model.generate(ids[:args.ctx], args.gen, temperature=args.temp)
     print("\n--- generated sample (temp=%.2f) ---" % args.temp)
@@ -432,32 +540,45 @@ $('stop').onclick=()=>{stop=true;};
 </script></body></html>"""
 
 def cmd_serve(args):
-    text, stoi, itos, V, ids = build_corpus()
+    text, stoi, itos, V, ids = build_corpus(args.corpus, args.max_chars)
     space = stoi.get(' ', 0)
 
     # hold out a small tail for an honest banner score, train on the rest
-    HELD = 5000
+    HELD = 4000
     n_train = (len(ids) - HELD) if args.chars <= 0 else args.chars
-    model = train_model(ids, V, args.slots, args.ctx, args.topk, n_train, args.decay)
 
-    # held-out score (measured on the float memory -- fast and accurate)
+    model = make_model(args, V)
+    # cache the (slow-to-build) memory bank so re-serving is instant
+    key = f"{args.corpus}|{n_train}|{args.ctx}|{args.slots}|{args.decay}|{args.backend}"
+    cache = os.path.join(HERE, f".memcache_{hashlib.md5(key.encode()).hexdigest()[:12]}.npz")
+    if args.backend == "binary" and os.path.exists(cache):
+        print(f"loading cached memory bank ({os.path.basename(cache)})...")
+        model.load_memory(cache)
+    else:
+        model = train_model(args, ids, V, n_train)
+        if args.backend == "binary":
+            model.save_memory(cache)
+            print(f"cached memory bank to {os.path.basename(cache)}")
+
+    # held-out score (with whatever recall path generation will use)
     ev = ids[n_train:n_train + HELD]
     if len(ev) > args.ctx + 1:
         acc, base = model.evaluate(ev)
     else:
         acc, base = 0.0, float(model.unigram.max())
-    print(f"held-out next-char accuracy: {acc*100:.1f}%  (baseline {base*100:.1f}%)")
+    tag = "ANN" if args.ann else "exact"
+    print(f"held-out next-char accuracy: {acc*100:.1f}%  (baseline {base*100:.1f}%, {tag})")
 
-    contexts = int(model.mem.shape[0])
-    if args.backend == "binary":
-        model.finalize_binary()
-        print(f"packed memory to bipolar hypervectors: "
-              f"{model.memb.nbytes/1e6:.0f} MB ({model.W} uint64 / context)")
+    contexts = int(model.memb.shape[0] if model.backend == "binary" else model.mem.shape[0])
+    if model.backend == "binary":
+        print(f"packed memory: {model.memb.nbytes/1e6:.0f} MB bipolar hypervectors"
+              f"{' + LSH index' if model.lsh else ''}")
 
     def to_ids(s):
         return [stoi.get(c, space) for c in s]
 
-    info = {"vocab": V, "contexts": contexts, "ctx": args.ctx, "backend": model.backend,
+    info = {"vocab": V, "contexts": contexts, "ctx": args.ctx,
+            "backend": model.backend + ("+ANN" if model.lsh else ""),
             "slots": args.slots, "dims": model.D, "acc": acc, "base": base}
 
     class Handler(BaseHTTPRequestHandler):
@@ -505,6 +626,10 @@ def main():
     ap = argparse.ArgumentParser(description="Octonionic Fano-path mini language model (no backprop)")
     ap.add_argument("mode", nargs="?", default="demo", choices=["demo", "serve"],
                     help="demo: train+evaluate+sample | serve: interactive prompt UI")
+    ap.add_argument("--corpus", choices=list(CORPORA), default="shakespeare",
+                    help="shakespeare (~1.1M chars) or science (multi-domain, up to ~10M)")
+    ap.add_argument("--max-chars", type=int, default=10_000_000,
+                    help="cap on the science corpus size when first built")
     ap.add_argument("--chars", type=int, default=None,
                     help="training characters (<=0 or omitted in serve = whole corpus)")
     ap.add_argument("--eval", type=int, default=8_000, help="held-out characters (demo)")
@@ -515,6 +640,12 @@ def main():
     ap.add_argument("--backend", choices=["float", "binary"], default=None,
                     help="memory format: binary = 32x smaller bipolar hypervectors "
                          "(serve default); float = faster/slightly more accurate (demo default)")
+    ap.add_argument("--ann", dest="ann", action="store_true", default=None,
+                    help="approximate nearest neighbours (LSH) -- needed for large corpora")
+    ap.add_argument("--no-ann", dest="ann", action="store_false",
+                    help="force exact Hamming search")
+    ap.add_argument("--lsh-bits", type=int, default=20, help="LSH bits sampled per table")
+    ap.add_argument("--lsh-tables", type=int, default=6, help="number of LSH tables")
     ap.add_argument("--gen", type=int, default=600, help="characters to generate (demo)")
     ap.add_argument("--temp", type=float, default=0.4, help="sampling temperature")
     ap.add_argument("--host", default="127.0.0.1", help="serve host")
@@ -526,6 +657,9 @@ def main():
         args.chars = 0 if args.mode == "serve" else 150_000
     if args.backend is None:
         args.backend = "binary" if args.mode == "serve" else "float"
+    if args.ann is None:
+        # default ON for binary serve (essential for large corpora), else OFF
+        args.ann = (args.mode == "serve" and args.backend == "binary")
 
     if args.mode == "serve":
         cmd_serve(args)
