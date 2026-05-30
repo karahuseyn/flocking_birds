@@ -133,14 +133,19 @@ python3 octonion_lm.py serve --corpus science --lsh-bits 22 --lsh-tables 8
 python3 octonion_lm.py serve --corpus science --no-ann            # exact (slow at 10M)
 ```
 
-Typical result on ~400k training characters (vocabulary 65, no backprop):
+Typical results (no backprop, single pass), next-char top-1 accuracy:
 
 ```
-next-char top-1 accuracy : ~55% float  /  ~52% binary   (baseline ~15%)
-lift over baseline       : ~3.6x
+Shakespeare, ~400k chars, ctx 12   : ~55% float / ~52% binary   (baseline ~15%)
+Science, 1.5M chars, ctx 12        : ~64.5% exact / ~64.5% ANN   (baseline ~16%)
 ```
+
+On the 1.5M-context science memory, LSH (`--lsh-bits 22 --lsh-tables 8`) matches
+exact Hamming accuracy (64.8% vs 64.6%) while scanning ~8k candidates instead of
+all 1.5M — a **~35× faster** recall (≈4 ms vs ≈140 ms per character). The science
+corpus scores higher than Shakespeare because scientific prose is more formulaic.
 
 With the recency weighting in place, accuracy keeps improving with more data and
-*longer* context (context 16 ≳ context 6). Generated text reproduces Shakespearean
-layout — speaker labels, line breaks and plausible words — despite never running a
-single gradient step.
+*longer* context (context 16 ≳ context 6). Generated text reproduces the layout of
+its corpus — Shakespearean speaker labels, or scientific-abstract phrasing — despite
+never running a single gradient step.

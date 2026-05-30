@@ -181,7 +181,7 @@ class FanoEncoder:
 # candidates sharing a bucket in any of L tables.  No training -- just hashing.
 # --------------------------------------------------------------------------
 class LSHIndex:
-    def __init__(self, memb, dims, bits=20, tables=6, seed=1916):
+    def __init__(self, memb, dims, bits=22, tables=8, seed=1916):
         rng = np.random.default_rng(seed)
         self.bits = min(bits, 63)
         self.tables = []
@@ -644,8 +644,8 @@ def main():
                     help="approximate nearest neighbours (LSH) -- needed for large corpora")
     ap.add_argument("--no-ann", dest="ann", action="store_false",
                     help="force exact Hamming search")
-    ap.add_argument("--lsh-bits", type=int, default=20, help="LSH bits sampled per table")
-    ap.add_argument("--lsh-tables", type=int, default=6, help="number of LSH tables")
+    ap.add_argument("--lsh-bits", type=int, default=22, help="LSH bits sampled per table")
+    ap.add_argument("--lsh-tables", type=int, default=8, help="number of LSH tables")
     ap.add_argument("--gen", type=int, default=600, help="characters to generate (demo)")
     ap.add_argument("--temp", type=float, default=0.4, help="sampling temperature")
     ap.add_argument("--host", default="127.0.0.1", help="serve host")
