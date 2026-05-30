@@ -158,21 +158,29 @@ Science (mixed),   30M contexts, ctx 12 : 66.1%  ( 4.3 GB RAM )    ~8 min build
 Science (mixed),   60M contexts, ctx 12 : 72.7%  ( 7.9 GB RAM )   ~16 min build
 Biomed (1 domain), 25M contexts, ctx 12 : 65.8%
 Biomed (1 domain), 70M contexts, ctx 16 : 73.0%  ( 8.2 GB RAM )   ~20 min build
+
+Controlled sweep (40M biomed, lsh-tables 6, only ctx varies):
+  ctx 12 : 70.8%      ctx 16 : 70.8%      ctx 20 : 70.6%
 ```
 
-Accuracy keeps climbing with both **more data** and **longer context** (the biomed
-run gains +7 points going 25M→70M contexts and ctx 12→16), with no training in the
-usual sense — just more contexts to recall from. A **single-domain** corpus
-(`--corpus biomed`, PubMed 200k clinical-trial abstracts, ~335M chars via `py7zr`)
-keeps generation firmly on-topic — real clinical-trial phrasing like *"odds ratio
-(90 % CI)"*, *"Mini-Mental State Examination"*, *"n = 51 … placebo"* — whereas the
-mixed science corpus wanders between biology and CS/ML. Recall slows as the buckets
-fill up, so raise `--lsh-bits` (more, smaller buckets) to trade a little recall for
-speed at scale. The cache skips the slow re-*encode* on restart, but the LSH index
-is rebuilt and the multi-GB bank is re-read, so large-corpus restarts take minutes,
-not seconds. Pushing past ~80M bumps into the RAM ceiling — drop `--lsh-tables` to fit.
+Accuracy is driven by **data amount, not context length**. A controlled sweep
+(40M biomed, identical LSH, only `--ctx` changed) shows ctx 12 ≈ 16 ≈ 20 — the
+recency weighting makes the most-recent few characters dominate, so extra context
+positions neither help nor hurt (they only cost build time). The earlier
+25M→70M jump (+7 points) was the *data*, not the longer context. The practical
+recipe is therefore: keep `--ctx` short (12) and spend the RAM/compute budget on
+**more data** and **more LSH tables** (dropping tables 6→5 to fit a bigger bank
+costs ~2 points of recall). A **single-domain** corpus (`--corpus biomed`, PubMed
+200k clinical-trial abstracts, ~335M chars via `py7zr`) keeps generation firmly
+on-topic — real clinical-trial phrasing like *"odds ratio (90 % CI)"*, *"Mini-Mental
+State Examination"*, *"n = 51 … placebo"* — whereas the mixed science corpus wanders
+between biology and CS/ML. Recall slows as the buckets fill up, so raise `--lsh-bits`
+(more, smaller buckets) to trade a little recall for speed at scale. The cache skips
+the slow re-*encode* on restart, but the LSH index is rebuilt and the multi-GB bank
+is re-read, so large-corpus restarts take minutes, not seconds. Pushing past ~90M
+bumps into the RAM ceiling — drop `--lsh-tables` to fit.
 
-With the recency weighting in place, accuracy keeps improving with more data and
-*longer* context (context 16 ≳ context 6). Generated text reproduces the layout of
-its corpus — Shakespearean speaker labels, or scientific-abstract phrasing — despite
-never running a single gradient step.
+Accuracy keeps improving with more data; context length in the 12–20 range is flat
+(the recency weighting already concentrates the signal in the most-recent characters).
+Generated text reproduces the layout of its corpus — Shakespearean speaker labels, or
+scientific-abstract phrasing — despite never running a single gradient step.
