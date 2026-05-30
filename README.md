@@ -151,15 +151,17 @@ Measured (this repo's 15 GB dev box, 4 cores, no backprop), next-char accuracy:
 
 ```
 Science,  1.5M contexts : 64.5%  (baseline ~16%)   ~4 ms/char
-Science,   30M contexts : 66.1%  ( 1.9 GB RAM )    ~8 min build,  ~68 ms/char
-Science,   60M contexts : 72.7%  ( 7.9 GB RAM )   ~16 min build, ~180 ms/char
+Science,   30M contexts : 66.1%  ( 4.3 GB RAM )    ~8 min build,  ~68 ms/char
+Science,   60M contexts : 72.7%  ( 7.9 GB RAM )   ~16 min build
 ```
 
 Accuracy keeps climbing with data (64→73%), with no training in the usual sense —
 just more contexts to recall from. Recall slows as the buckets fill up, so raise
 `--lsh-bits` (more, smaller buckets) to trade a little recall for speed at scale.
-The built bank is cached, so re-serving the same corpus is instant. Pushing to
-~100M is possible but bumps into the RAM ceiling — drop `--lsh-tables` to fit.
+The cache skips the slow re-*encode* on restart, but the LSH index is rebuilt and
+the multi-GB bank is re-read, so large-corpus restarts take minutes, not seconds.
+Pushing to ~100M is possible but bumps into the RAM ceiling — drop `--lsh-tables`
+to fit.
 
 With the recency weighting in place, accuracy keeps improving with more data and
 *longer* context (context 16 ≳ context 6). Generated text reproduces the layout of
