@@ -15,20 +15,23 @@ Fano lines, so a context literally traces a *Fano path*.
 Learning is a single, gradient-free pass (hyperdimensional / Vector-Symbolic
 computing):
 
-    * bind   = slot-wise octonion product            (order / role)
-    * bundle = addition (superposition)               (memory)
-    * recall = cosine similarity against prototypes   (no weights, no SGD)
+    * bind   = slot-wise octonion product             (order / role)
+    * bundle = recency-weighted addition (superpose)   (the context vector)
+    * recall = cosine similarity over an instance memory (no weights, no SGD)
 
-For each next-character class c we accumulate a prototype hypervector
+"Training" simply *memorises* every Fano-encoded context together with the
+character that followed it.  To predict the next character we recall the k
+nearest stored contexts by cosine similarity and let their successors vote --
+a fuzzy, holographic n-gram.  No gradients, no parameters are ever fit.
 
-    P[c] = sum over training positions whose next char is c of  encode(context)
-
-To predict, we score every class by cosine(encode(context), P[c]) and sample.
-That is the whole "training algorithm" -- centroids in octonion hyperspace.
+Closer context characters carry more of the signal, so positions are
+recency-weighted (decay**p) before bundling; this is what lets *longer*
+contexts help instead of drowning the most-predictive recent characters.
 
 Usage:
-    python3 octonion_lm.py                 # fetch data, train, eval, sample
-    python3 octonion_lm.py --chars 300000 --ctx 6 --slots 96 --gen 800
+    python3 octonion_lm.py                       # fetch data, train, eval, sample
+    python3 octonion_lm.py --chars 0 --ctx 16    # whole corpus, long context
+    python3 octonion_lm.py serve                 # interactive prompt UI in the browser
 """
 
 import argparse, os, json, time, threading, webbrowser, urllib.request
@@ -89,7 +92,7 @@ class FanoEncoder:
     """Turns a window of token ids into one hypervector of `slots` octonions
     (dimension 8 * slots) using Fano-path role binding."""
 
-    def __init__(self, vocab_size, slots=64, ctx=5, seed=int("0709", 10) ^ 1916):
+    def __init__(self, vocab_size, slots=64, ctx=5, decay=0.65, seed=int("0709", 10) ^ 1916):
         self.V, self.K, self.ctx = vocab_size, slots, ctx
         rng = np.random.default_rng(seed)
 
@@ -103,6 +106,13 @@ class FanoEncoder:
         # over the Fano plane; the running octonion product hops along its
         # lines.  Roles are therefore signed unit basis octonions.
         self.roles = self._build_fano_roles(rng)          # (ctx, slots, 8)
+
+        # Recency weighting: the next character depends most on the closest
+        # context characters, so position p (0 = most recent) is down-weighted
+        # by decay**p.  This lets *longer* contexts add disambiguating signal
+        # without the recent, most-predictive characters being drowned out.
+        w = decay ** np.arange(ctx)                        # (ctx,)
+        self.pos_w = (w / np.linalg.norm(w)).reshape(ctx, 1, 1)
 
     def _build_fano_roles(self, rng):
         roles = np.zeros((self.ctx, self.K, 8))
@@ -123,7 +133,7 @@ class FanoEncoder:
         acc = np.zeros((B, self.K, 8))
         for p in range(self.ctx):
             toks = self.emb[window_ids[:, p]]              # (B, K, 8)
-            acc += octo_mul(toks, self.roles[p][None])     # bind by Fano role
+            acc += self.pos_w[p] * octo_mul(toks, self.roles[p][None])  # recency-weighted Fano bind
         flat = acc.reshape(B, self.K * 8)
         n = np.linalg.norm(flat, axis=1, keepdims=True)
         return flat / np.where(n > 1e-9, n, 1.0)
@@ -138,8 +148,8 @@ class FanoEncoder:
 # in the same roles are neighbours -> a fuzzy, holographic n-gram.
 # --------------------------------------------------------------------------
 class OctonionFanoLM:
-    def __init__(self, vocab_size, slots=64, ctx=5, topk=5):
-        self.enc = FanoEncoder(vocab_size, slots, ctx)
+    def __init__(self, vocab_size, slots=64, ctx=5, topk=5, decay=0.65):
+        self.enc = FanoEncoder(vocab_size, slots, ctx, decay=decay)
         self.V, self.ctx, self.topk = vocab_size, ctx, topk
         self.D = slots * 8
 
@@ -231,11 +241,11 @@ def build_corpus():
     ids = np.array([stoi[c] for c in text], dtype=np.int64)
     return text, stoi, itos, len(chars), ids
 
-def train_model(ids, V, slots, ctx, topk, n_chars):
+def train_model(ids, V, slots, ctx, topk, n_chars, decay):
     train_ids = ids if n_chars <= 0 else ids[:n_chars]
-    model = OctonionFanoLM(V, slots=slots, ctx=ctx, topk=topk)
+    model = OctonionFanoLM(V, slots=slots, ctx=ctx, topk=topk, decay=decay)
     print(f"training on {len(train_ids):,} chars  "
-          f"(hypervector {slots} octonions = {slots*8} dims, context {ctx})...")
+          f"(hypervector {slots} octonions = {slots*8} dims, context {ctx}, decay {decay})...")
     t = time.time()
     model.train(train_ids)
     print(f"memory bank: {model.mem.shape[0]:,} contexts x {model.D} dims "
@@ -251,7 +261,7 @@ def cmd_demo(args):
     print("Fano lines (from the multiplication table):")
     for ln in fano_lines():
         print("   {%d, %d, %d}" % ln)
-    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars)
+    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars, args.decay)
 
     n_train = len(ids) if args.chars <= 0 else args.chars
     eval_ids = ids[n_train:n_train + args.eval]
@@ -362,7 +372,7 @@ $('stop').onclick=()=>{stop=true;};
 def cmd_serve(args):
     text, stoi, itos, V, ids = build_corpus()
     space = stoi.get(' ', 0)
-    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars)
+    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars, args.decay)
 
     # quick held-out score for the UI banner
     n_train = len(ids) if args.chars <= 0 else args.chars
@@ -427,7 +437,8 @@ def main():
     ap.add_argument("--chars", type=int, default=None,
                     help="training characters (<=0 or omitted in serve = whole corpus)")
     ap.add_argument("--eval", type=int, default=8_000, help="held-out characters (demo)")
-    ap.add_argument("--ctx", type=int, default=8, help="context length")
+    ap.add_argument("--ctx", type=int, default=12, help="context length")
+    ap.add_argument("--decay", type=float, default=0.5, help="recency weight per position (decay**p)")
     ap.add_argument("--slots", type=int, default=64, help="octonions per hypervector (dim = 8*slots)")
     ap.add_argument("--topk", type=int, default=7, help="nearest contexts to recall")
     ap.add_argument("--gen", type=int, default=600, help="characters to generate (demo)")
