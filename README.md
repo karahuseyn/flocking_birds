@@ -81,9 +81,20 @@ Learning is purely associative (hyperdimensional / Vector-Symbolic computing):
 
 ```bash
 pip install numpy
-python3 octonion_lm.py                       # fetch, train, evaluate, generate
-python3 octonion_lm.py --ctx 6 --slots 96 --topk 7 --gen 800 --temp 0.4
+
+# demo: train, evaluate, print a sample
+python3 octonion_lm.py                       # ~150k chars, context 8
+python3 octonion_lm.py --chars 0 --ctx 10    # whole corpus (~1.1M chars), longer context
+
+# interactive: write your own prompts in the browser
+python3 octonion_lm.py serve                 # trains on the whole corpus, opens a prompt UI
+python3 octonion_lm.py serve --ctx 8 --slots 96 --port 8000
 ```
+
+`serve` trains the associative memory once at startup (no backprop), then hosts a
+small page at `http://127.0.0.1:8000/` where you type a prompt and the model
+continues it character by character. Use `--chars N` to train on a subset (faster
+startup, smaller memory bank) and `--no-open` to skip launching the browser.
 
 Typical result on ~150k training characters (vocabulary 65, no backprop):
 
@@ -92,5 +103,6 @@ next-char top-1 accuracy : ~46%      (random / most-frequent baseline ~15%)
 lift over baseline       : ~3x
 ```
 
-with generated text that reproduces Shakespearean layout — speaker labels,
-line breaks and plausible words — despite never running a single gradient step.
+Accuracy climbs further with more data and longer context. Generated text
+reproduces Shakespearean layout — speaker labels, line breaks and plausible words —
+despite never running a single gradient step.

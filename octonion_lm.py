@@ -31,7 +31,8 @@ Usage:
     python3 octonion_lm.py --chars 300000 --ctx 6 --slots 96 --gen 800
 """
 
-import argparse, os, urllib.request
+import argparse, os, json, time, threading, webbrowser, urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 # --------------------------------------------------------------------------
@@ -187,11 +188,11 @@ class OctonionFanoLM:
         acc = float((pred == tgt).mean())
         return acc, float(self.unigram.max())
 
-    def generate(self, seed_ids, n_chars, temperature=0.5, rng=None):
+    def generate(self, seed_ids, n_chars, temperature=0.5, rng=None, pad_id=0):
         rng = rng or np.random.default_rng(0)
         ctx = list(seed_ids[-self.ctx:])
         while len(ctx) < self.ctx:
-            ctx = [seed_ids[0]] + ctx
+            ctx = [pad_id] + ctx
         out = []
         for _ in range(n_chars):
             window = np.array([[ctx[-1 - p] for p in range(self.ctx)]])
@@ -220,49 +221,229 @@ def collect_data():
     return text
 
 # --------------------------------------------------------------------------
-def main():
-    ap = argparse.ArgumentParser(description="Octonionic Fano-path mini language model (no backprop)")
-    ap.add_argument("--chars", type=int, default=150_000, help="training characters")
-    ap.add_argument("--eval", type=int, default=8_000, help="held-out characters")
-    ap.add_argument("--ctx", type=int, default=6, help="context length")
-    ap.add_argument("--slots", type=int, default=64, help="octonions per hypervector (dim = 8*slots)")
-    ap.add_argument("--topk", type=int, default=7, help="nearest contexts to recall")
-    ap.add_argument("--gen", type=int, default=600, help="characters to generate")
-    ap.add_argument("--temp", type=float, default=0.4, help="sampling temperature")
-    args = ap.parse_args()
-
+# Shared setup
+# --------------------------------------------------------------------------
+def build_corpus():
     text = collect_data()
     chars = sorted(set(text))
     stoi = {c: i for i, c in enumerate(chars)}
     itos = {i: c for c, i in stoi.items()}
-    V = len(chars)
     ids = np.array([stoi[c] for c in text], dtype=np.int64)
+    return text, stoi, itos, len(chars), ids
 
-    train_ids = ids[:args.chars]
-    eval_ids = ids[args.chars:args.chars + args.eval]
+def train_model(ids, V, slots, ctx, topk, n_chars):
+    train_ids = ids if n_chars <= 0 else ids[:n_chars]
+    model = OctonionFanoLM(V, slots=slots, ctx=ctx, topk=topk)
+    print(f"training on {len(train_ids):,} chars  "
+          f"(hypervector {slots} octonions = {slots*8} dims, context {ctx})...")
+    t = time.time()
+    model.train(train_ids)
+    print(f"memory bank: {model.mem.shape[0]:,} contexts x {model.D} dims "
+          f"({model.mem.nbytes/1e6:.0f} MB)  built in {time.time()-t:.1f}s")
+    return model
 
-    print(f"vocab={V}  train_chars={len(train_ids)}  eval_chars={len(eval_ids)}")
-    print(f"hypervector: {args.slots} octonions = {args.slots*8} dims | context={args.ctx}")
+# --------------------------------------------------------------------------
+# Command: demo  (train, evaluate, print a sample)
+# --------------------------------------------------------------------------
+def cmd_demo(args):
+    text, stoi, itos, V, ids = build_corpus()
+    print(f"vocab={V}  total_chars={len(ids):,}")
     print("Fano lines (from the multiplication table):")
     for ln in fano_lines():
         print("   {%d, %d, %d}" % ln)
+    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars)
 
-    model = OctonionFanoLM(V, slots=args.slots, ctx=args.ctx, topk=args.topk)
-    print("\ntraining (single gradient-free pass: memorising Fano-encoded contexts)...")
-    model.train(train_ids)
-    print(f"memory bank: {model.mem.shape[0]} contexts x {model.D} dims")
+    n_train = len(ids) if args.chars <= 0 else args.chars
+    eval_ids = ids[n_train:n_train + args.eval]
+    if len(eval_ids) > args.ctx + 1:
+        acc, base = model.evaluate(eval_ids)
+        print(f"\nnext-char top-1 accuracy : {acc*100:5.2f}%   (k={args.topk} nearest contexts)")
+        print(f"most-frequent-char base  : {base*100:5.2f}%")
+        print(f"lift over baseline       : x{acc/base:4.2f}")
 
-    acc, base = model.evaluate(eval_ids)
-    print(f"\nnext-char top-1 accuracy : {acc*100:5.2f}%   (k={args.topk} nearest contexts)")
-    print(f"most-frequent-char base  : {base*100:5.2f}%")
-    print(f"lift over baseline       : x{acc/base:4.2f}")
-
-    seed = ids[:args.ctx]
-    gen = model.generate(seed, args.gen, temperature=args.temp)
-    sample = "".join(itos[i] for i in gen)
+    gen = model.generate(ids[:args.ctx], args.gen, temperature=args.temp)
     print("\n--- generated sample (temp=%.2f) ---" % args.temp)
-    print(sample)
+    print("".join(itos[i] for i in gen))
     print("--- end sample ---")
+
+# --------------------------------------------------------------------------
+# Command: serve  (interactive prompt UI in the browser)
+# --------------------------------------------------------------------------
+SERVE_HTML = r"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Octonionic Fano-Path LM</title>
+<style>
+  :root{--bg:#0a0a0f;--panel:rgba(255,255,255,.04);--border:rgba(255,255,255,.12);
+        --accent:#9ad;--accent2:#d9a;--text:#e8e8ee;--muted:#8a8a99;}
+  *{box-sizing:border-box} body{margin:0;min-height:100vh;
+    background:radial-gradient(1200px 800px at 70% -10%,#14142a 0%,var(--bg) 60%);
+    color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:14px;padding:26px 22px 60px;}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 2px} .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+  textarea{width:100%;min-height:90px;resize:vertical;background:#05050a;color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:10px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5}
+  .row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
+  .ctl{flex:1;min-width:150px} .ctl label{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}
+  .ctl label b{color:var(--text);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;margin-top:6px;accent-color:var(--accent)}
+  .btns{display:flex;gap:8px} button{background:#1a1a2e;color:var(--text);border:1px solid var(--border);
+    border-radius:8px;padding:9px 16px;cursor:pointer;font-size:14px}
+  button.go{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#06060c;border:none;font-weight:600}
+  button:disabled{opacity:.5;cursor:default}
+  #out{background:#05050a;border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:14px;
+    min-height:160px;white-space:pre-wrap;word-break:break-word;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.55}
+  #out .seed{color:var(--muted)} #out .gen{color:var(--text)}
+  #cursor{display:inline-block;width:7px;height:15px;background:var(--accent2);animation:b 1s steps(2) infinite;vertical-align:-2px}
+  @keyframes b{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+  .meta{color:var(--muted);font-size:12px;margin-top:6px}
+  code{background:#05050a;padding:1px 5px;border-radius:4px;border:1px solid var(--border)}
+</style></head><body><div class="wrap">
+  <h1>Octonionic Fano-Path LM</h1>
+  <div class="sub">a mini language model trained with <b>no backpropagation</b> &mdash;
+     next characters are recalled from nearest Fano-encoded contexts in octonion hyperspace</div>
+
+  <div class="panel">
+    <label style="color:var(--muted);font-size:13px">Prompt (the model continues your text, character by character)</label>
+    <textarea id="prompt">ROMEO:
+What light through yonder window breaks?</textarea>
+    <div class="row">
+      <div class="ctl"><label>Generate <b><span id="nv">300</span> chars</b></label>
+        <input id="n" type="range" min="40" max="1200" value="300" step="20"></div>
+      <div class="ctl"><label>Temperature <b><span id="tv">0.40</span></b></label>
+        <input id="t" type="range" min="10" max="120" value="40"></div>
+      <div class="btns"><button class="go" id="go">Generate</button><button id="stop" disabled>Stop</button></div>
+    </div>
+    <div class="meta" id="meta">loading model…</div>
+  </div>
+
+  <div id="out"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+$('n').oninput=()=>$('nv').textContent=$('n').value;
+$('t').oninput=()=>$('tv').textContent=($('t').value/100).toFixed(2);
+let stop=false;
+
+fetch('/info').then(r=>r.json()).then(d=>{
+  $('meta').innerHTML=`vocab <b>${d.vocab}</b> · memory <b>${d.contexts.toLocaleString()}</b> contexts · `+
+    `context length <b>${d.ctx}</b> · ${d.slots} octonions/token (${d.dims}-dim) · `+
+    `held-out next-char accuracy <b>${(d.acc*100).toFixed(1)}%</b> (baseline ${(d.base*100).toFixed(1)}%)`;
+});
+
+async function gen(){
+  stop=false; $('go').disabled=true; $('stop').disabled=false;
+  const seed=$('prompt').value, total=+$('n').value, temp=$('t').value/100;
+  const out=$('out');
+  out.innerHTML='<span class="seed"></span><span class="gen"></span><span id="cursor"></span>';
+  out.querySelector('.seed').textContent=seed;
+  let produced=0, text=seed;
+  while(produced<total && !stop){
+    const step=Math.min(40,total-produced);
+    let r;
+    try{ r=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({text,n:step,temp})}); }
+    catch(e){ break; }
+    const d=await r.json();
+    text+=d.gen; produced+=step;
+    out.querySelector('.gen').textContent=text.slice(seed.length);
+    out.scrollTop=out.scrollHeight;
+  }
+  const c=$('cursor'); if(c)c.remove();
+  $('go').disabled=false; $('stop').disabled=true;
+}
+$('go').onclick=gen;
+$('stop').onclick=()=>{stop=true;};
+</script></body></html>"""
+
+def cmd_serve(args):
+    text, stoi, itos, V, ids = build_corpus()
+    space = stoi.get(' ', 0)
+    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars)
+
+    # quick held-out score for the UI banner
+    n_train = len(ids) if args.chars <= 0 else args.chars
+    ev = ids[n_train:n_train + 4000]
+    if len(ev) > args.ctx + 1:
+        acc, base = model.evaluate(ev)
+    else:
+        acc, base = 0.0, float(model.unigram.max())
+    print(f"held-out next-char accuracy: {acc*100:.1f}%  (baseline {base*100:.1f}%)")
+
+    def to_ids(s):
+        return [stoi.get(c, space) for c in s]
+
+    info = {"vocab": V, "contexts": int(model.mem.shape[0]), "ctx": args.ctx,
+            "slots": args.slots, "dims": model.D, "acc": acc, "base": base}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):  # quiet
+            pass
+        def _send(self, code, body, ctype="application/json"):
+            data = body.encode("utf-8") if isinstance(body, str) else body
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        def do_GET(self):
+            if self.path == "/" or self.path.startswith("/index"):
+                self._send(200, SERVE_HTML, "text/html; charset=utf-8")
+            elif self.path == "/info":
+                self._send(200, json.dumps(info))
+            else:
+                self._send(404, "{}")
+        def do_POST(self):
+            if self.path != "/generate":
+                self._send(404, "{}"); return
+            ln = int(self.headers.get("Content-Length", 0))
+            req = json.loads(self.rfile.read(ln) or b"{}")
+            prompt = req.get("text", "")
+            n = max(1, min(int(req.get("n", 40)), 400))
+            temp = float(req.get("temp", 0.4))
+            seed_ids = to_ids(prompt) or [space]
+            rng = np.random.default_rng()
+            out = model.generate(seed_ids, n, temperature=temp, rng=rng, pad_id=space)
+            self._send(200, json.dumps({"gen": "".join(itos[i] for i in out)}))
+
+    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    url = f"http://{args.host}:{args.port}/"
+    print(f"\nserving the prompt UI at  {url}\n(press Ctrl+C to stop)")
+    if not args.no_open:
+        threading.Thread(target=lambda: (time.sleep(1), webbrowser.open(url)), daemon=True).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nshutting down."); srv.shutdown()
+
+# --------------------------------------------------------------------------
+def main():
+    ap = argparse.ArgumentParser(description="Octonionic Fano-path mini language model (no backprop)")
+    ap.add_argument("mode", nargs="?", default="demo", choices=["demo", "serve"],
+                    help="demo: train+evaluate+sample | serve: interactive prompt UI")
+    ap.add_argument("--chars", type=int, default=None,
+                    help="training characters (<=0 or omitted in serve = whole corpus)")
+    ap.add_argument("--eval", type=int, default=8_000, help="held-out characters (demo)")
+    ap.add_argument("--ctx", type=int, default=8, help="context length")
+    ap.add_argument("--slots", type=int, default=64, help="octonions per hypervector (dim = 8*slots)")
+    ap.add_argument("--topk", type=int, default=7, help="nearest contexts to recall")
+    ap.add_argument("--gen", type=int, default=600, help="characters to generate (demo)")
+    ap.add_argument("--temp", type=float, default=0.4, help="sampling temperature")
+    ap.add_argument("--host", default="127.0.0.1", help="serve host")
+    ap.add_argument("--port", type=int, default=8000, help="serve port")
+    ap.add_argument("--no-open", action="store_true", help="do not auto-open the browser")
+    args = ap.parse_args()
+
+    if args.chars is None:
+        args.chars = 0 if args.mode == "serve" else 150_000
+
+    if args.mode == "serve":
+        cmd_serve(args)
+    else:
+        cmd_demo(args)
 
 if __name__ == "__main__":
     main()
