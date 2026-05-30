@@ -152,6 +152,8 @@ class OctonionFanoLM:
         self.enc = FanoEncoder(vocab_size, slots, ctx, decay=decay)
         self.V, self.ctx, self.topk = vocab_size, ctx, topk
         self.D = slots * 8
+        self.W = (self.D + 63) // 64          # uint64 words per packed context
+        self.backend = "float"
 
     def _windows(self, ids):
         """All (context, target) pairs. windows (N,ctx) col0 = most recent."""
@@ -172,23 +174,46 @@ class OctonionFanoLM:
         """Single gradient-free pass: memorise the Fano-encoded contexts and
         their successors.  This is the entire learning procedure."""
         win, self.tgt = self._windows(ids)
-        self.mem = self._encode_all(win)                   # (Nmem, D) unit rows
+        self.mem = self._encode_all(win)                   # (Nmem, D) float rows
         self.unigram = np.bincount(self.tgt, minlength=self.V).astype(float)
         self.unigram /= self.unigram.sum()
+
+    def _pack(self, vecs):
+        """(N, D) float -> (N, W) uint64 of sign bits (a bipolar hypervector)."""
+        bits = np.zeros((len(vecs), self.W * 64), dtype=np.uint8)
+        bits[:, :self.D] = (vecs > 0)
+        return np.packbits(bits, axis=1).view(np.uint64)
+
+    def finalize_binary(self):
+        """Compress the memory to 1-bit-per-dimension bipolar hypervectors
+        (32x smaller) so the whole corpus fits in tens of MB.  Recall then uses
+        Hamming distance via popcount instead of float cosine."""
+        self.memb = self._pack(self.mem)
+        del self.mem
+        self.backend = "binary"
 
     def _votes(self, windows, bs=512):
         """Similarity-weighted next-char votes from the k nearest contexts."""
         out = np.zeros((len(windows), self.V))
+        k = self.topk
+        if self.backend == "binary":
+            qb = self._pack(self.enc.encode_window(windows).astype(np.float32))
+            for i in range(len(windows)):
+                ham = np.bitwise_count(self.memb ^ qb[i]).sum(1)   # Hamming, (Nmem,)
+                idx = np.argpartition(ham, k)[:k]
+                w = np.maximum(self.D - 2.0 * ham[idx], 0.0)       # bipolar similarity
+                np.add.at(out[i], self.tgt[idx], w)
+            return out
         for s in range(0, len(windows), bs):
             Q = self.enc.encode_window(windows[s:s + bs]).astype(np.float32)
             sims = Q @ self.mem.T                          # (b, Nmem) cosine
-            k = min(self.topk, sims.shape[1])
-            idx = np.argpartition(-sims, k - 1, axis=1)[:, :k]
+            kk = min(k, sims.shape[1])
+            idx = np.argpartition(-sims, kk - 1, axis=1)[:, :kk]
             b = Q.shape[0]
             rows = np.arange(b)[:, None]
             w = np.maximum(sims[rows, idx], 0.0)           # (b, k)
             chars = self.tgt[idx]                          # (b, k)
-            for j in range(k):
+            for j in range(kk):
                 np.add.at(out[s:s + bs], (np.arange(b), chars[:, j]), w[:, j])
         return out
 
@@ -271,6 +296,10 @@ def cmd_demo(args):
         print(f"most-frequent-char base  : {base*100:5.2f}%")
         print(f"lift over baseline       : x{acc/base:4.2f}")
 
+    if args.backend == "binary":
+        model.finalize_binary()
+        print(f"packed memory: {model.memb.nbytes/1e6:.0f} MB bipolar hypervectors")
+
     gen = model.generate(ids[:args.ctx], args.gen, temperature=args.temp)
     print("\n--- generated sample (temp=%.2f) ---" % args.temp)
     print("".join(itos[i] for i in gen))
@@ -339,8 +368,8 @@ $('t').oninput=()=>$('tv').textContent=($('t').value/100).toFixed(2);
 let stop=false;
 
 fetch('/info').then(r=>r.json()).then(d=>{
-  $('meta').innerHTML=`vocab <b>${d.vocab}</b> · memory <b>${d.contexts.toLocaleString()}</b> contexts · `+
-    `context length <b>${d.ctx}</b> · ${d.slots} octonions/token (${d.dims}-dim) · `+
+  $('meta').innerHTML=`vocab <b>${d.vocab}</b> · memory <b>${d.contexts.toLocaleString()}</b> contexts `+
+    `(<b>${d.backend}</b>) · context length <b>${d.ctx}</b> · ${d.slots} octonions/token (${d.dims}-dim) · `+
     `held-out next-char accuracy <b>${(d.acc*100).toFixed(1)}%</b> (baseline ${(d.base*100).toFixed(1)}%)`;
 });
 
@@ -372,21 +401,30 @@ $('stop').onclick=()=>{stop=true;};
 def cmd_serve(args):
     text, stoi, itos, V, ids = build_corpus()
     space = stoi.get(' ', 0)
-    model = train_model(ids, V, args.slots, args.ctx, args.topk, args.chars, args.decay)
 
-    # quick held-out score for the UI banner
-    n_train = len(ids) if args.chars <= 0 else args.chars
-    ev = ids[n_train:n_train + 4000]
+    # hold out a small tail for an honest banner score, train on the rest
+    HELD = 5000
+    n_train = (len(ids) - HELD) if args.chars <= 0 else args.chars
+    model = train_model(ids, V, args.slots, args.ctx, args.topk, n_train, args.decay)
+
+    # held-out score (measured on the float memory -- fast and accurate)
+    ev = ids[n_train:n_train + HELD]
     if len(ev) > args.ctx + 1:
         acc, base = model.evaluate(ev)
     else:
         acc, base = 0.0, float(model.unigram.max())
     print(f"held-out next-char accuracy: {acc*100:.1f}%  (baseline {base*100:.1f}%)")
 
+    contexts = int(model.mem.shape[0])
+    if args.backend == "binary":
+        model.finalize_binary()
+        print(f"packed memory to bipolar hypervectors: "
+              f"{model.memb.nbytes/1e6:.0f} MB ({model.W} uint64 / context)")
+
     def to_ids(s):
         return [stoi.get(c, space) for c in s]
 
-    info = {"vocab": V, "contexts": int(model.mem.shape[0]), "ctx": args.ctx,
+    info = {"vocab": V, "contexts": contexts, "ctx": args.ctx, "backend": model.backend,
             "slots": args.slots, "dims": model.D, "acc": acc, "base": base}
 
     class Handler(BaseHTTPRequestHandler):
@@ -441,6 +479,9 @@ def main():
     ap.add_argument("--decay", type=float, default=0.5, help="recency weight per position (decay**p)")
     ap.add_argument("--slots", type=int, default=64, help="octonions per hypervector (dim = 8*slots)")
     ap.add_argument("--topk", type=int, default=7, help="nearest contexts to recall")
+    ap.add_argument("--backend", choices=["float", "binary"], default=None,
+                    help="memory format: binary = 32x smaller bipolar hypervectors "
+                         "(serve default); float = faster/slightly more accurate (demo default)")
     ap.add_argument("--gen", type=int, default=600, help="characters to generate (demo)")
     ap.add_argument("--temp", type=float, default=0.4, help="sampling temperature")
     ap.add_argument("--host", default="127.0.0.1", help="serve host")
@@ -450,6 +491,8 @@ def main():
 
     if args.chars is None:
         args.chars = 0 if args.mode == "serve" else 150_000
+    if args.backend is None:
+        args.backend = "binary" if args.mode == "serve" else "float"
 
     if args.mode == "serve":
         cmd_serve(args)

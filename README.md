@@ -96,12 +96,26 @@ python3 octonion_lm.py serve --ctx 12 --slots 96 --port 8000
 `serve` trains the associative memory once at startup (no backprop), then hosts a
 small page at `http://127.0.0.1:8000/` where you type a prompt and the model
 continues it character by character. Use `--chars N` to train on a subset (faster
-startup, smaller memory bank) and `--no-open` to skip launching the browser.
+startup) and `--no-open` to skip launching the browser.
+
+### Binary (bipolar) memory
+
+To serve the **whole ~1.1M-character corpus**, `serve` compresses the memory to
+1-bit-per-dimension **bipolar hypervectors**: each context's float vector is reduced
+to its sign bits, packed into `uint64` words. Recall then uses Hamming distance
+(`np.bitwise_count`) instead of float cosine. This shrinks the memory bank **~32×**
+(≈ 2.3 GB → ≈ 71 MB for the full corpus) so it runs comfortably on a laptop, at a
+cost of only ~1.5 points of accuracy.
+
+```bash
+python3 octonion_lm.py serve                  # whole corpus, binary memory (default)
+python3 octonion_lm.py serve --backend float  # faster recall, ~2.3 GB RAM, slightly more accurate
+```
 
 Typical result on ~400k training characters (vocabulary 65, no backprop):
 
 ```
-next-char top-1 accuracy : ~55%      (random / most-frequent baseline ~15%)
+next-char top-1 accuracy : ~55% float  /  ~52% binary   (baseline ~15%)
 lift over baseline       : ~3.6x
 ```
 
