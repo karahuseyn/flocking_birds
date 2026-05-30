@@ -35,6 +35,7 @@ Usage:
 """
 
 import argparse, os, json, time, hashlib, threading, webbrowser, urllib.request
+import multiprocessing as mp
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
@@ -183,22 +184,22 @@ class FanoEncoder:
 class LSHIndex:
     def __init__(self, memb, dims, bits=22, tables=8, seed=1916):
         rng = np.random.default_rng(seed)
-        self.bits = min(bits, 63)
+        self.bits = min(bits, 31)                          # keys fit in uint32
         self.tables = []
         for _ in range(tables):
             pos = rng.choice(dims, size=self.bits, replace=False)
-            keys = self._project(memb, pos)               # (N,) uint64 bucket key
-            order = np.argsort(keys, kind="stable")
-            self.tables.append((pos, keys[order], order))
+            keys = self._project(memb, pos)                # (N,) uint32 bucket key
+            order = np.argsort(keys, kind="stable").astype(np.int32)
+            self.tables.append((pos, keys[order], order))  # int32 order halves RAM
 
     def _project(self, memb, pos):
         """Gather the chosen bit positions out of the packed codes -> one int key."""
         words = (pos // 64).astype(np.int64)
         offs = (pos % 64).astype(np.uint64)
-        key = np.zeros(memb.shape[0], dtype=np.uint64)
+        key = np.zeros(memb.shape[0], dtype=np.uint32)
         for i in range(len(pos)):
-            bit = (memb[:, words[i]] >> offs[i]) & np.uint64(1)
-            key |= bit << np.uint64(i)
+            bit = ((memb[:, words[i]] >> offs[i]) & np.uint64(1)).astype(np.uint32)
+            key |= bit << np.uint32(i)
         return key
 
     def query(self, code):
@@ -213,6 +214,27 @@ class LSHIndex:
         if not cands:
             return np.empty(0, dtype=np.int64)
         return np.unique(np.concatenate(cands))
+
+# --------------------------------------------------------------------------
+# Parallel encoding workers.  Encoding a ~30M+ context corpus is the slow part;
+# it parallelises perfectly across chunks.  Workers inherit the encoder and the
+# id stream from the parent via fork (copy-on-write) -- no per-task pickling.
+# --------------------------------------------------------------------------
+_W = {}                                       # {enc, ids, ctx, W, D}
+
+def _worker_init(enc, ids, ctx, W, D):
+    _W.update(enc=enc, ids=ids, ctx=ctx, W=W, D=D)
+
+def _encode_pack_range(rng):
+    s, e = rng
+    enc, ids, ctx, W, D = _W["enc"], _W["ids"], _W["ctx"], _W["W"], _W["D"]
+    win = np.empty((e - s, ctx), dtype=np.int32)
+    for p in range(ctx):
+        win[:, p] = ids[ctx - 1 - p + s: ctx - 1 - p + s + (e - s)]
+    f = enc.encode_window(win)
+    bits = np.zeros((len(f), W * 64), dtype=np.uint8)
+    bits[:, :D] = (f > 0)
+    return s, np.packbits(bits, axis=1).view(np.uint64)
 
 # --------------------------------------------------------------------------
 # The model: gradient-free associative memory in octonion hyperspace.
@@ -250,16 +272,18 @@ class OctonionFanoLM:
             out[s:s + bs] = self.enc.encode_window(win[s:s + bs]).astype(np.float32)
         return out
 
-    def train(self, ids):
+    def train(self, ids, workers=None):
         """Single gradient-free pass: memorise the Fano-encoded contexts and
         their successors.  This is the entire learning procedure."""
-        win, self.tgt = self._windows(ids)
+        ids = np.ascontiguousarray(ids, dtype=np.int16)    # compact id stream
+        self.tgt = ids[self.ctx:]                          # (Nmem,) view, no copy
         self.unigram = np.bincount(self.tgt, minlength=self.V).astype(float)
         self.unigram /= self.unigram.sum()
         if self.backend == "binary":
-            self.memb = self._build_binary(win)            # packed, memory-light
+            self.memb = self._build_binary(ids, workers)   # streamed, parallel
             self._build_ann()
         else:
+            win, _ = self._windows(ids)
             self.mem = self._encode_all(win)               # (Nmem, D) float rows
 
     def _pack(self, vecs):
@@ -268,13 +292,25 @@ class OctonionFanoLM:
         bits[:, :self.D] = (vecs > 0)
         return np.packbits(bits, axis=1).view(np.uint64)
 
-    def _build_binary(self, win, bs=16384):
-        """Encode + sign-pack in chunks so the float memory is never fully
-        materialised -- this is what lets a ~10M-context corpus fit in RAM."""
-        out = np.empty((len(win), self.W), dtype=np.uint64)
-        for s in range(0, len(win), bs):
-            f = self.enc.encode_window(win[s:s + bs]).astype(np.float32)
-            out[s:s + bs] = self._pack(f)
+    def _build_binary(self, ids, workers=None, bs=65536):
+        """Encode + sign-pack contexts in chunks, generating each window on the
+        fly (the full window array is never materialised) and farming chunks out
+        to several CPU cores.  This is what makes a ~30M+ corpus tractable."""
+        N = len(ids) - self.ctx
+        out = np.empty((N, self.W), dtype=np.uint64)
+        ranges = [(s, min(s + bs, N)) for s in range(0, N, bs)]
+        if workers is None:
+            workers = min(mp.cpu_count(), 4) if N > 400_000 else 1
+        if workers <= 1:
+            for s, e in ranges:
+                _W.update(enc=self.enc, ids=ids, ctx=self.ctx, W=self.W, D=self.D)
+                _, packed = _encode_pack_range((s, e)); out[s:e] = packed
+            return out
+        with mp.get_context("fork").Pool(
+                workers, initializer=_worker_init,
+                initargs=(self.enc, ids, self.ctx, self.W, self.D)) as pool:
+            for s, packed in pool.imap_unordered(_encode_pack_range, ranges):
+                out[s:s + len(packed)] = packed
         return out
 
     def _build_ann(self):
@@ -364,17 +400,26 @@ def _build_shakespeare(max_chars):
 
 def _build_science(max_chars):
     """A multi-domain scientific corpus: PubMed RCT abstracts (biology/medicine)
-    mixed with arXiv abstracts (CS / AI / vision).  Cleaned to plain prose."""
+    interleaved line-by-line with arXiv abstracts (math / CS / AI), so any prefix
+    stays a balanced mix.  Cleaned to plain prose."""
     print("  fetching PubMed RCT abstracts (biology/medicine)...")
     pm = _fetch(f"{RAW}/Franck-Dernoncourt/pubmed-rct/master/PubMed_20k_RCT/train.txt")
-    bio = "\n".join(ln.split("\t", 1)[1].strip() for ln in pm.split("\n") if "\t" in ln)
+    bio = [ln.split("\t", 1)[1].strip() for ln in pm.split("\n") if "\t" in ln]
     print("  fetching arXiv abstracts (math / CS / AI)...")
-    arx = "\n".join(_fetch(f"{RAW}/gcunhase/ArXivAbsTitleDataset/master/results/" + f)
-                    for f in ["artificial%20intelligence_10047_15000_15_abs.txt",
-                              "computer%20vision_14582_15000_15_abs.txt",
-                              "language%20generation_14514_15000_15_abs.txt"])
-    half = max_chars // 2
-    return bio[:half].strip() + "\n\n" + arx[:max_chars - half].strip()
+    arx = []
+    for f in ["artificial%20intelligence_10047_15000_15_abs.txt",
+              "computer%20vision_14582_15000_15_abs.txt",
+              "language%20generation_14514_15000_15_abs.txt"]:
+        arx += [ln.strip() for ln in
+                _fetch(f"{RAW}/gcunhase/ArXivAbsTitleDataset/master/results/" + f).split("\n")
+                if ln.strip()]
+    out, n, i = [], 0, 0
+    while (i < len(bio) or i < len(arx)) and n < max_chars:
+        for src in (bio, arx):
+            if i < len(src):
+                out.append(src[i]); n += len(src[i]) + 1
+        i += 1
+    return "\n".join(out)[:max_chars]
 
 CORPORA = {"shakespeare": _build_shakespeare, "science": _build_science}
 
@@ -628,7 +673,7 @@ def main():
                     help="demo: train+evaluate+sample | serve: interactive prompt UI")
     ap.add_argument("--corpus", choices=list(CORPORA), default="shakespeare",
                     help="shakespeare (~1.1M chars) or science (multi-domain, up to ~10M)")
-    ap.add_argument("--max-chars", type=int, default=10_000_000,
+    ap.add_argument("--max-chars", type=int, default=60_000_000,
                     help="cap on the science corpus size when first built")
     ap.add_argument("--chars", type=int, default=None,
                     help="training characters (<=0 or omitted in serve = whole corpus)")
