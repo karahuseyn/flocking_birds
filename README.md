@@ -133,17 +133,29 @@ python3 octonion_lm.py serve --corpus science --lsh-bits 22 --lsh-tables 8
 python3 octonion_lm.py serve --corpus science --no-ann            # exact (slow at 10M)
 ```
 
-Typical results (no backprop, single pass), next-char top-1 accuracy:
-
-```
-Shakespeare, ~400k chars, ctx 12   : ~55% float / ~52% binary   (baseline ~15%)
-Science, 1.5M chars, ctx 12        : ~64.5% exact / ~64.5% ANN   (baseline ~16%)
-```
-
 On the 1.5M-context science memory, LSH (`--lsh-bits 22 --lsh-tables 8`) matches
 exact Hamming accuracy (64.8% vs 64.6%) while scanning ~8k candidates instead of
 all 1.5M — a **~35× faster** recall (≈4 ms vs ≈140 ms per character). The science
 corpus scores higher than Shakespeare because scientific prose is more formulaic.
+
+### Scaling to tens of millions of contexts
+
+Building a 30–60M-context memory bank is made tractable by:
+
+- **Parallel encoding** — chunks are encoded and sign-packed across CPU cores
+  (fork + copy-on-write; `~3×` on 4 cores), with each window generated on the fly
+  so the full `(N × ctx)` window array is never materialised.
+- **Compact memory** — `int16` ids, packed bipolar codes, and an `int32` LSH index.
+
+Measured (this repo's 15 GB dev box, 4 cores, no backprop):
+
+```
+Science, 30M contexts : 66.1% acc, 1.9 GB RAM, ~8 min build, ~68 ms/char (ANN)
+Science, 60M contexts : ~66%  acc, ~4–8 GB RAM, ~15 min build
+```
+
+The built bank is cached, so re-serving the same corpus is instant. Pushing to
+~100M is possible but bumps into the RAM ceiling — drop `--lsh-tables` to fit.
 
 With the recency weighting in place, accuracy keeps improving with more data and
 *longer* context (context 16 ≳ context 6). Generated text reproduces the layout of
