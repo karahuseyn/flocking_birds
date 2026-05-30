@@ -114,6 +114,8 @@ class FanoEncoder:
         w = decay ** np.arange(ctx)                        # (ctx,)
         self.pos_w = (w / np.linalg.norm(w)).reshape(ctx, 1, 1)
 
+        self._precompute_bind()                            # signed-permutation binding
+
     def _build_fano_roles(self, rng):
         roles = np.zeros((self.ctx, self.K, 8))
         for k in range(self.K):
@@ -127,13 +129,44 @@ class FanoEncoder:
                 roles[p, k] = acc
         return roles
 
+    def _precompute_bind(self):
+        """Each role is a *signed basis* octonion (+/- e_m), so binding by it
+        (a full octonion product) is just a signed permutation of the 8
+        components.  Precompute the source index and sign per (position, slot,
+        component) so encoding is a cheap gather instead of a product -- this
+        is what makes encoding the whole corpus fast."""
+        E = np.eye(8)
+        R = np.zeros((8, 8, 8))                            # R[m] @ x == x (x) e_m
+        for m in range(8):
+            for a in range(8):
+                R[m, :, a] = octo_mul(E[a], E[m])
+        src = np.zeros((self.ctx, self.K, 8), dtype=np.int64)
+        sgn = np.zeros((self.ctx, self.K, 8))
+        for p in range(self.ctx):
+            for k in range(self.K):
+                r = self.roles[p, k]
+                m = int(np.argmax(np.abs(r)))              # role = sign(r[m]) * e_m
+                M = np.sign(r[m]) * R[m]                    # (8, 8) signed permutation
+                for i in range(8):
+                    j = int(np.argmax(np.abs(M[i])))
+                    src[p, k, i] = j
+                    sgn[p, k, i] = M[i, j]
+
+        # Bake the bind (signed permutation) and recency weight into a per-token
+        # table:  bound[t, p] is token t already role-bound for position p.  At
+        # encode time we only gather and sum -- no products, no permutations.
+        bound = np.empty((self.V, self.ctx, self.K, 8))
+        for p in range(self.ctx):
+            g = np.take_along_axis(self.emb, np.broadcast_to(src[p], self.emb.shape), axis=2)
+            bound[:, p] = self.pos_w[p] * (sgn[p] * g)
+        self.bound = bound                                 # (V, ctx, K, 8)
+
     def encode_window(self, window_ids):
         """window_ids: (B, ctx) ints (column 0 = most recent). -> (B, slots*8)."""
         B = window_ids.shape[0]
-        acc = np.zeros((B, self.K, 8))
-        for p in range(self.ctx):
-            toks = self.emb[window_ids[:, p]]              # (B, K, 8)
-            acc += self.pos_w[p] * octo_mul(toks, self.roles[p][None])  # recency-weighted Fano bind
+        acc = self.bound[window_ids[:, 0], 0].copy()       # (B, K, 8)
+        for p in range(1, self.ctx):
+            acc += self.bound[window_ids[:, p], p]          # gather + bundle
         flat = acc.reshape(B, self.K * 8)
         n = np.linalg.norm(flat, axis=1, keepdims=True)
         return flat / np.where(n > 1e-9, n, 1.0)
