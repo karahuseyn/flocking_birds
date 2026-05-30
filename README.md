@@ -76,13 +76,16 @@ Learning is purely associative (hyperdimensional / Vector-Symbolic computing):
 
 ### Data
 
-`octonion_lm.py` collects its corpus on demand and caches it (git-ignored). Two
+`octonion_lm.py` collects its corpus on demand and caches it (git-ignored). Three
 corpora are built in:
 
 - `--corpus shakespeare` — the public-domain *tinyShakespeare* text (~1.1M chars).
-- `--corpus science` — a multi-domain **scientific** corpus (~10M chars): PubMed RCT
-  abstracts (biology / medicine) mixed with arXiv abstracts (math / CS / AI),
+- `--corpus science` — a multi-domain **scientific** corpus (up to ~60M chars): PubMed
+  RCT abstracts (biology / medicine) interleaved with arXiv abstracts (math / CS / AI),
   cleaned to plain prose.
+- `--corpus biomed` — a large **single-domain** corpus (~335M chars): PubMed 200k RCT
+  clinical-trial abstracts. Single domain keeps generation on-topic; needs `py7zr`
+  (`pip install py7zr`) to unpack the upstream archive.
 
 ### Run
 
@@ -150,18 +153,24 @@ Building a 30–60M-context memory bank is made tractable by:
 Measured (this repo's 15 GB dev box, 4 cores, no backprop), next-char accuracy:
 
 ```
-Science,  1.5M contexts : 64.5%  (baseline ~16%)   ~4 ms/char
-Science,   30M contexts : 66.1%  ( 4.3 GB RAM )    ~8 min build,  ~68 ms/char
-Science,   60M contexts : 72.7%  ( 7.9 GB RAM )   ~16 min build
+Science (mixed),  1.5M contexts, ctx 12 : 64.5%  (baseline ~16%)   ~4 ms/char
+Science (mixed),   30M contexts, ctx 12 : 66.1%  ( 4.3 GB RAM )    ~8 min build
+Science (mixed),   60M contexts, ctx 12 : 72.7%  ( 7.9 GB RAM )   ~16 min build
+Biomed (1 domain), 25M contexts, ctx 12 : 65.8%
+Biomed (1 domain), 70M contexts, ctx 16 : 73.0%  ( 8.2 GB RAM )   ~20 min build
 ```
 
-Accuracy keeps climbing with data (64→73%), with no training in the usual sense —
-just more contexts to recall from. Recall slows as the buckets fill up, so raise
-`--lsh-bits` (more, smaller buckets) to trade a little recall for speed at scale.
-The cache skips the slow re-*encode* on restart, but the LSH index is rebuilt and
-the multi-GB bank is re-read, so large-corpus restarts take minutes, not seconds.
-Pushing to ~100M is possible but bumps into the RAM ceiling — drop `--lsh-tables`
-to fit.
+Accuracy keeps climbing with both **more data** and **longer context** (the biomed
+run gains +7 points going 25M→70M contexts and ctx 12→16), with no training in the
+usual sense — just more contexts to recall from. A **single-domain** corpus
+(`--corpus biomed`, PubMed 200k clinical-trial abstracts, ~335M chars via `py7zr`)
+keeps generation firmly on-topic — real clinical-trial phrasing like *"odds ratio
+(90 % CI)"*, *"Mini-Mental State Examination"*, *"n = 51 … placebo"* — whereas the
+mixed science corpus wanders between biology and CS/ML. Recall slows as the buckets
+fill up, so raise `--lsh-bits` (more, smaller buckets) to trade a little recall for
+speed at scale. The cache skips the slow re-*encode* on restart, but the LSH index
+is rebuilt and the multi-GB bank is re-read, so large-corpus restarts take minutes,
+not seconds. Pushing past ~80M bumps into the RAM ceiling — drop `--lsh-tables` to fit.
 
 With the recency weighting in place, accuracy keeps improving with more data and
 *longer* context (context 16 ≳ context 6). Generated text reproduces the layout of
