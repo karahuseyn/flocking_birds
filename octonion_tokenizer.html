@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Octonionic Tokenizer – Lossy Compression Demo</title>
+
+<style>
+  :root{
+    --bg:#0a0a0f;
+    --panel:rgba(255,255,255,0.04);
+    --border:rgba(255,255,255,0.12);
+    --accent:#9ad;
+    --accent2:#d9a;
+    --text:#e8e8ee;
+    --muted:#8a8a99;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:radial-gradient(1200px 800px at 70% -10%, #14142a 0%, var(--bg) 60%);
+    color:var(--text);
+    font-family:system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size:14px;
+    line-height:1.5;
+    padding:28px 22px 60px;
+  }
+  header{max-width:1000px;margin:0 auto 22px;}
+  h1{font-size:22px;margin:0 0 4px;font-weight:600;}
+  .sub{color:var(--muted);font-size:13px;}
+  .sub a{color:var(--accent);text-decoration:none;}
+  .grid{
+    max-width:1000px;margin:0 auto;
+    display:grid;grid-template-columns:1fr 1fr;gap:18px;
+  }
+  @media(max-width:760px){.grid{grid-template-columns:1fr;}}
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px;
+  }
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:0 0 10px;font-weight:600;}
+  textarea{
+    width:100%;min-height:140px;resize:vertical;
+    background:#05050a;color:var(--text);
+    border:1px solid var(--border);border-radius:8px;
+    padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+  }
+  .controls{display:flex;flex-direction:column;gap:14px;margin-top:6px;}
+  .ctl label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);}
+  .ctl label b{color:var(--text);font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%;margin-top:6px;accent-color:var(--accent);}
+  input[type=text]{
+    width:100%;background:#05050a;color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:8px;
+    font-family:ui-monospace,monospace;font-size:13px;margin-top:6px;
+  }
+  .stats{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:4px;
+  }
+  .stat{
+    background:#05050a;border:1px solid var(--border);border-radius:8px;
+    padding:10px 12px;
+  }
+  .stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+  .stat .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;}
+  .stat .v.accent{color:var(--accent);}
+  .stat .v.accent2{color:var(--accent2);}
+  pre.tokens{
+    background:#05050a;border:1px solid var(--border);border-radius:8px;
+    padding:10px;max-height:160px;overflow:auto;
+    font-family:ui-monospace,monospace;font-size:11.5px;color:var(--muted);
+    white-space:pre-wrap;word-break:break-all;margin:0;
+  }
+  .out{
+    background:#05050a;border:1px solid var(--border);border-radius:8px;
+    padding:10px;min-height:90px;
+    font-family:ui-monospace,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word;
+  }
+  .bar{height:8px;border-radius:4px;background:#1a1a2e;overflow:hidden;margin-top:6px;}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));}
+  .note{color:var(--muted);font-size:12px;margin-top:10px;}
+  footer{max-width:1000px;margin:26px auto 0;color:var(--muted);font-size:12px;}
+  code{background:#05050a;padding:1px 5px;border-radius:4px;border:1px solid var(--border);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Octonionic Tokenizer</h1>
+  <div class="sub">
+    Lossy transform-domain compression over the octonion algebra &nbsp;·&nbsp;
+    shares the <code>Octonion3D</code> math of the
+    <a href="flocking_birds.html">flocking simulation</a>
+    (based on <a href="https://arxiv.org/pdf/0709.1916" target="_blank">arXiv:0709.1916</a>)
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- INPUT -->
+  <div class="panel">
+    <h2>Input text</h2>
+    <textarea id="input">The octonions are the largest of the four normed division algebras. Here we fold bytes into 8-dimensional octonion tokens, rotate them through a unit octonion key, and quantize the direction — a lossy "tokenizer" that trades fidelity for size.</textarea>
+    <div class="controls">
+      <div class="ctl">
+        <label>Component quantization <b><span id="bitsVal">5</span> bits / component</b></label>
+        <input id="bits" type="range" min="1" max="8" value="5">
+        <div class="note">Fewer bits → smaller tokens, more distortion. Compression ≈ <b id="theory">1.60×</b> (watch the byte RMSE rise as you drop bits).</div>
+      </div>
+      <div class="ctl">
+        <label>Octonion key seed</label>
+        <input id="seed" type="text" value="0709.1916">
+        <div class="note">A unit octonion derived from this seed rotates each token in 8-D before quantization (an invertible transform basis).</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="panel">
+    <h2>Compression</h2>
+    <div class="stats">
+      <div class="stat"><div class="k">Tokens</div><div class="v" id="nTokens">0</div></div>
+      <div class="stat"><div class="k">Original</div><div class="v" id="origSize">0 B</div></div>
+      <div class="stat"><div class="k">Compressed</div><div class="v accent" id="compSize">0 B</div></div>
+      <div class="stat"><div class="k">Ratio</div><div class="v accent2" id="ratio">–</div></div>
+    </div>
+    <div class="bar"><i id="ratioBar" style="width:0%"></i></div>
+
+    <h2 style="margin-top:18px;">Reconstruction (after lossy decode)</h2>
+    <div class="out" id="decoded"></div>
+    <div class="stats" style="margin-top:10px;">
+      <div class="stat"><div class="k">Char accuracy</div><div class="v" id="acc">–</div></div>
+      <div class="stat"><div class="k">Byte RMSE</div><div class="v" id="rmse">–</div></div>
+    </div>
+  </div>
+
+  <!-- TOKEN STREAM -->
+  <div class="panel" style="grid-column:1 / -1;">
+    <h2>Octonion token stream (mixed &amp; quantized)</h2>
+    <pre class="tokens" id="tokenView"></pre>
+  </div>
+
+</div>
+
+<footer>
+  Each 8-byte block becomes an octonion <code>O</code>. It is rotated into a transform basis
+  by a unit key <code>K</code> (octonion product <code>P = O⊗K</code>, norm-preserving), and
+  the 8 components of <code>P</code> are uniformly quantized over a shared range. Decoding
+  dequantizes and applies the exact octonion inverse <code>P⊗K⁻¹ = O</code> — valid by
+  Artin's theorem, since <code>O</code> and <code>K</code> generate an associative subalgebra.
+  The rotation mixes all 8 bytes together, so fidelity is best read from the byte RMSE rather
+  than exact-character accuracy.
+</footer>
+
+<script>
+/* ============================================================
+   Octonion algebra (Cayley–Dickson over quaternions)
+   — reused from flocking_birds.html's Octonion3D
+============================================================ */
+const Oct = {
+  qMul(x,y){
+    return [
+      x[0]*y[0]-x[1]*y[1]-x[2]*y[2]-x[3]*y[3],
+      x[0]*y[1]+x[1]*y[0]+x[2]*y[3]-x[3]*y[2],
+      x[0]*y[2]-x[1]*y[3]+x[2]*y[0]+x[3]*y[1],
+      x[0]*y[3]+x[1]*y[2]-x[2]*y[1]+x[3]*y[0]
+    ];
+  },
+  qConj(x){ return [x[0],-x[1],-x[2],-x[3]]; },
+  // full octonion product P = q ⊗ r
+  mul(q,r){
+    const a=q.slice(0,4), b=q.slice(4);
+    const c=r.slice(0,4), d=r.slice(4);
+    const t1=this.qMul(a,c);
+    const t2=this.qMul(this.qConj(d),b);
+    const t3=this.qMul(d,a);
+    const t4=this.qMul(b,this.qConj(c));
+    return [
+      t1[0]-t2[0],t1[1]-t2[1],t1[2]-t2[2],t1[3]-t2[3],
+      t3[0]+t4[0],t3[1]+t4[1],t3[2]+t4[2],t3[3]+t4[3]
+    ];
+  },
+  conj(o){ return [o[0],-o[1],-o[2],-o[3],-o[4],-o[5],-o[6],-o[7]]; },
+  norm2(o){ let s=0; for(let i=0;i<8;i++) s+=o[i]*o[i]; return s; },
+  norm(o){ return Math.sqrt(this.norm2(o)); },
+  inverse(o){
+    const n2=this.norm2(o);
+    const c=this.conj(o);
+    return c.map(x=>x/n2);
+  }
+};
+
+/* ============================================================
+   Deterministic unit-octonion key from a string seed
+============================================================ */
+function seededKey(seed){
+  // xfnv-1a hash -> mulberry32 PRNG -> 8 gaussian-ish components, normalized
+  let h=2166136261>>>0;
+  for(let i=0;i<seed.length;i++){ h^=seed.charCodeAt(i); h=Math.imul(h,16777619); }
+  let a=h>>>0;
+  const rnd=()=>{ a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296; };
+  let k=[];
+  for(let i=0;i<8;i++) k.push(rnd()*2-1);
+  const n=Oct.norm(k)||1;
+  return k.map(x=>x/n);            // |K| = 1  → rotation preserves norm
+}
+
+/* ============================================================
+   Encode / decode  —  octonion transform coding
+   1. fold 8 bytes -> octonion O
+   2. rotate into the key basis:  P = O ⊗ K   (|K|=1, norm preserved)
+   3. quantize each of the 8 components to `bits` over a shared range R
+   Decoding dequantizes and applies the exact inverse  P ⊗ K⁻¹ = O.
+============================================================ */
+const DC=128;                            // centre bytes to [-128,127] (DC removal)
+
+function encode(bytes, bits, key){
+  const levels=(1<<bits)-1;
+  const Ps=[];
+  for(let p=0;p<bytes.length;p+=8){
+    const O=[0,0,0,0,0,0,0,0];
+    for(let j=0;j<8 && p+j<bytes.length;j++) O[j]=bytes[p+j]-DC;
+    Ps.push(Oct.mul(O,key));             // rotate into transform basis
+  }
+  // shared symmetric quantization range (stored once in the header)
+  let R=1e-9;
+  for(const P of Ps) for(const c of P) R=Math.max(R,Math.abs(c));
+  const tokens=Ps.map(P=>
+    P.map(c=> Math.round((c/R*0.5+0.5)*levels) )   // 8 ints in [0..levels]
+  );
+  return {R, tokens};
+}
+
+function decode(enc, bits, key, outLen){
+  const levels=(1<<bits)-1, R=enc.R;
+  const kinv=Oct.inverse(key);
+  const out=new Uint8Array(enc.tokens.length*8);
+  enc.tokens.forEach((q,t)=>{
+    const P=q.map(v=> (v/levels-0.5)*2*R );         // dequantize components
+    const O=Oct.mul(P,kinv);                         // exact inverse rotation
+    for(let i=0;i<8;i++)
+      out[t*8+i]=Math.max(0,Math.min(255,Math.round(O[i]+DC)));
+  });
+  return out.slice(0,outLen);
+}
+
+/* bits used by the compressed stream (+32-bit header for the range R) */
+function compressedBits(nTokens, bits){
+  return 32 + nTokens * 8 * bits;
+}
+
+/* ============================================================
+   Wiring
+============================================================ */
+const $=id=>document.getElementById(id);
+const enc=new TextEncoder(), dec=new TextDecoder('utf-8',{fatal:false});
+
+function run(){
+  const text=$('input').value;
+  const bits=+$('bits').value;
+  const key=seededKey($('seed').value);
+  $('bitsVal').textContent=bits;
+  $('theory').textContent=(8/bits).toFixed(2)+'×';
+
+  const bytes=enc.encode(text);
+  const enc8=encode(bytes,bits,key);
+  const tokens=enc8.tokens;
+  const recon=decode(enc8,bits,key,bytes.length);
+
+  const origBits=bytes.length*8;
+  const compBits=compressedBits(tokens.length,bits);
+  const ratio=origBits/compBits;
+
+  $('nTokens').textContent=tokens.length;
+  $('origSize').textContent=fmt(origBits/8);
+  $('compSize').textContent=fmt(compBits/8);
+  $('ratio').textContent=ratio.toFixed(2)+'×';
+  $('ratioBar').style.width=Math.min(100,(ratio/8)*100)+'%';
+
+  // reconstruction
+  $('decoded').textContent=dec.decode(recon);
+  let same=0;
+  const n=Math.min(bytes.length,recon.length);
+  let se=0;
+  for(let i=0;i<n;i++){ if(bytes[i]===recon[i]) same++; const e=bytes[i]-recon[i]; se+=e*e; }
+  $('acc').textContent=n? (100*same/n).toFixed(1)+'%' : '–';
+  $('rmse').textContent=n? Math.sqrt(se/n).toFixed(2) : '–';
+
+  // token preview (first ~24 tokens) — quantized octonion components
+  const view=tokens.slice(0,24).map((tk,i)=>
+    'τ'+String(i).padStart(2,'0')+'  ['+tk.map(v=>String(v).padStart(3)).join(' ')+']'
+  ).join('\n') + (tokens.length>24? '\n… (+'+(tokens.length-24)+' more)':'');
+  $('tokenView').textContent=view||'—';
+}
+
+function fmt(b){
+  if(b<1024) return b.toFixed(b<10?1:0)+' B';
+  return (b/1024).toFixed(2)+' KB';
+}
+
+['input','bits','seed'].forEach(id=>{
+  $(id).addEventListener('input',run);
+});
+run();
+</script>
+</body>
+</html>
