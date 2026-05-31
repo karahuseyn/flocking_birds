@@ -15,8 +15,30 @@ The simulation is based on ideas discussed in:
 - `flocking_birds.html` — Interactive 3D simulation (Three.js, single-file)
 - `flocking_birds.py` — Original Python prototype
 - `octonion_tokenizer.html` — Octonionic lossy compression demo (single-file)
-- `octonion_lm.py` — Octonionic Fano-path mini language model (no backprop)
+- `octonion_index.py` — **single entry point**: prints the project map, runs any module
+- `octonion_*.py` — the 18 octonion / Fano modules (mapped below)
 - `README.md` — Project description
+
+## The octonion / Fano project map
+
+Everything below is built on **one substrate**: the octonion algebra, whose multiplication
+table *is* the Fano plane (7 imaginary units = 7 points, 7 lines). `octonion_lm.py` defines
+the algebra; every other module imports it. Run `python3 octonion_index.py` for this map, or
+`python3 octonion_index.py <module>` to run one demo. **No backprop anywhere; every headline
+number is base64-verified in its own module.**
+
+| theme | modules | what it shows |
+|---|---|---|
+| **Foundation** | `octonion_lm`, `octonion_attention` | the algebra + Fano-path LM; bind/unbind associative recall (100% vs 3% elementwise) |
+| **Transformer mechanism, gradient-free O(n)** | `octonion_induction`, `octonion_delta`, `octonion_speed`, `octonion_deep`, `octonion_reason`, `octonion_seq` | matches softmax attention's in-context recall at O(n), **33× faster**, with depth, gating, multi-step reasoning |
+| **Retrieval applications** | `octonion_symptom`, `octonion_chat`, `octonion_answer` | disease ranking (100% top-1), QA bot (96% paraphrase), long structured answers over 495k sentences |
+| **Gradient-free training** | `octonion_hebb`, `octonion_nonlinear`, `octonion_select`, `octonion_codebook` | where it helps (interactions, colliding codes: +3 to +89 pts) and where it honestly doesn't (linear/bundled data) |
+| **Fano transports (object→object)** | `octonion_transport`, `octonion_analogy`, `octonion_compose` | Fano rotations learn functions (Fano generators load-bearing), word analogies, zero-shot composition |
+
+**The one coherent finding:** the octonion structure is load-bearing exactly where its
+*algebra* is exploited — bind/unbind recall and Fano-specific transport — and interchangeable
+with plain vectors where you only bundle-and-classify. Gradient-free training helps exactly
+where the random HDC encoding has *not* already done the work.
 
 ## Usage
 Open `flocking_birds.html` directly in a modern web browser.  
