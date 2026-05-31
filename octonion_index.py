@@ -53,6 +53,7 @@ GROUPS = [
         ("octonion_proposition","octonion-BIND discourse state (role(x)filler, Fano roles); matches real topic-drift"),
         ("octonion_logic",     "classical connectives on octonions; sequential inference exact (chain 1.000)"),
         ("octonion_gpt",       "END-TO-END: all components in one gradient-free O(n) generator on a large corpus"),
+        ("octonion_code",      "structure-aware Python CODE generation; idioms/signatures, not execution"),
     ]),
 ]
 

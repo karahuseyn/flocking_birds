@@ -85,3 +85,13 @@ So: the model is a perfect **lookup table** (memorised facts, definitions, a tim
 was shown) but performs **no procedure**. Computation requires step-by-step state
 transformation, which this gradient-free associative architecture does not have. A code or
 math corpus will reproduce *patterns and idioms* it has seen, not *execute* logic.
+
+## Code generation (octonion_code.py)
+
+The same gradient-free idea with a **code-aware tokenizer** (keeps punctuation, operators,
+indentation as tokens) + a 4-gram backbone produces genuinely Python-shaped code:
+`def get(self, X, y=None):`, `if not isinstance(value, (list, tuple)):`,
+`import numpy as np`, `from django.utils.functional import cached_property`. It is
+idiom/signature **retrieval**, not execution -- syntactically plausible, not guaranteed to run
+(consistent with the arithmetic result: it recalls patterns, it does not run procedures).
+Run `python3 octonion_code.py "def get"` (downloads ~10MB of real .py from 6 libraries).
