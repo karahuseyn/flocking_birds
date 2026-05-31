@@ -43,8 +43,19 @@ DIFFERENTIAL = ("what disease", "which disease", "what condition", "which condit
                 "should i suspect", "what could", "what might", "what is wrong", "could it be",
                 "what causes my", "why do i", "diagnos", "what's wrong")
 
+def _stem(w):
+    """Tiny suffix stemmer so singular/plural and verb forms match
+    ('palpitation'~'palpitations', 'cause'~'causes'~'causing')."""
+    if w.isdigit() or len(w) <= 4:
+        return w
+    for suf in ("ies", "ing", "es", "s", "ed"):
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            return w[: -len(suf)] + ("y" if suf == "ies" else "")
+    return w
+
 def tokenize(s):
-    return [w for w in TOK.findall(s.lower()) if w not in STOP and (len(w) > 1 or w.isdigit())]
+    return [_stem(w) for w in TOK.findall(s.lower())
+            if w not in STOP and (len(w) > 1 or w.isdigit())]
 
 def good_sentence(s):
     sl = s.lower()

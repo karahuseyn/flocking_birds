@@ -433,9 +433,34 @@ treated with drugs. Therapies are available to manage the signs and symptoms of 
 
 For "type 2 diabetes" it surfaces the right drug (*metformin*), risk factors, and that
 symptoms appear slowly — on-topic and authoritative, gradient-free, octonion throughout.
-Honest limit: it's *extractive* (real sentences retrieved and arranged), not generative,
-and the odd filler sentence slips through; but it answers a serious prompt at length, and
-the search/plan/compose machinery is all octonion + LSH, no training.
+
+For a **"what disease should I suspect?"** prompt it switches to a *differential*: it
+anchors on the clinical symptom, retrieves matching sentences, and groups the evidence by
+the disease each MedQuAD entry is about, ranking candidate conditions:
+
+```
+$ python3 octonion_answer.py "I drink a lot of tea ... a very brief, painless, momentary,
+                              strong palpitation. What disease should I suspect?"
+(anchored on symptom: palpitation)
+1. Arrhythmia          — Symptoms of an arrhythmia include palpitations, a slow heartbeat,
+                         an irregular heartbeat, dizziness.
+2. Panic Disorder      — People with panic disorder have sudden and repeated attacks of fear.
+3. Low Blood Pressure  — A fast heartbeat or a heart that skips a beat (palpitations).
+4. Graves Disease      — People with hyperthyroidism may have a rapid heartbeat (palpitations).
+5. Mitral Valve Prolapse — The symptoms ... palpitations.
+```
+
+Getting there needed a symbolic fix: a plain IDF anchor latched onto "tea" and returned
+nonsense ("Women", "Diarrhea", "IgA Nephropathy"). The fix marks query words against a
+**132-symptom lexicon** (with a small stemmer so *palpitation*~*palpitations*) and
+*requires* the single most-specific symptom to appear in every cited sentence — so the
+generic qualifier "painless" can't pull in unrelated diseases. Now it anchors on
+*palpitation* and returns a genuinely sensible differential: **Arrhythmia** first, plus
+panic disorder, hypotension, hyperthyroidism (Graves), and mitral valve prolapse — all real
+causes of palpitations. Honest limits: it's *extractive* (real sentences retrieved and
+arranged), not generative; it ranks by text match, so it lists candidates rather than
+triaging them by likelihood. But it answers a serious prompt at length, and the search /
+symbolic plan / compose machinery is all octonion + LSH, no training.
 
 ## The arc, in one line
 
