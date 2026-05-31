@@ -143,7 +143,7 @@ def main():
     import base64, os
     which = sys.argv[1] if len(sys.argv) > 1 else "biomed"
     paths = {"biomed": "corpus_biomed.txt", "science": "corpus_science.txt",
-             "shakespeare": "corpus_shakespeare.txt"}
+             "shakespeare": "corpus_shakespeare.txt", "books": "corpus_books.txt"}
     cap = {"biomed": None, "science": None, "shakespeare": None}   # use the WHOLE corpus
     vocab_size = int(os.environ.get("OCTO_VOCAB", "40000"))
     p = paths.get(which, which); c = cap.get(which, None)
