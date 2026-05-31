@@ -420,14 +420,15 @@ three techniques on the octonion base:
 
 ```
 $ python3 octonion_answer.py "What is hypertension and how is it diagnosed and treated?"
+(topic: hypertension)
 
 ## Diagnosis
-High blood pressure (hypertension) is usually diagnosed using blood pressure
-measurement. ... sometimes additional tests are recommended to evaluate symptoms.
+... This condition is characterized by severe hypertension that begins unusually early
+in life, often in childhood ... High blood pressure (hypertension) is treated with medication.
 
 ## Treatment
-High blood pressure (hypertension) is treated with medication. ... medication or
-lifestyle changes. The disease is sometimes treated with surgery.
+High blood pressure (hypertension) is treated with medication. If it does not, it can be
+treated with drugs. Therapies are available to manage the signs and symptoms of the condition.
 ```
 
 For "type 2 diabetes" it surfaces the right drug (*metformin*), risk factors, and that
