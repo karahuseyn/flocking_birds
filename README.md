@@ -506,6 +506,18 @@ octonion/HDC code the *encoding* already did the linear work, so learning has to
 **which conjunctions exist** — and when it does, accuracy climbs from chance to ~98% with
 no backprop, no gradients, octonions throughout.
 
+**Reality check on real data (base64-verified).** The same selection *fails* on the real
+4920-case symptom→disease set: bundling all symptoms scores ~88% under noise (100% clean),
+while selecting conjunctions drops to ~44% and even selecting singles to ~78% — every
+selection variant loses to the full bundle. Real diseases are predicted by *individual*
+symptoms (a linear distributed signal), so the full octonion bundle is already near-optimal
+and discarding features only loses evidence. The 9→98% win is genuine but task-specific: it
+needs a problem where single features are useless and only interactions predict. The honest
+conclusion across both studies (Hebbian prototypes and conjunction selection): on
+linearly-predictable data the octonion/HDC *encoding has already done the learning*, leaving
+gradient-free training no headroom; the headroom is real only on genuinely
+interaction-dominated tasks.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at

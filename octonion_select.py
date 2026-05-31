@@ -20,9 +20,21 @@ the signal, so random conjunctions mostly miss and selection must do real work.
 
 Verified result (base64-checked, 5 seeds): on the 16-class pair task, RANDOM
 conjunctions score 9.2% while SELECTED conjunctions score 98.3%, recovering 16/16
-true signature pairs.  This is the headroom the prototype-only Hebbian rule lacked:
-adapting the *feature map* (not the prototypes) is where gradient-free learning
-actually pays off on an octonion/HDC representation.
+true signature pairs.  So gradient-free feature-map learning CAN work -- when the
+task genuinely needs it.
+
+HONEST REALITY CHECK (base64-verified on the real 4920-case symptom->disease data):
+selection *hurts* there.  Bundling all symptoms scores ~88% under noise (100% clean),
+selecting conjunctions ~44%, selecting singles ~78% -- every selection variant loses
+to the full bundle.  The reason is decisive and worth stating: real diseases are
+predicted by individual symptoms (a *linear* distributed signal), so the full
+octonion bundle is already near-optimal and dropping any feature discards evidence.
+The 9->98% win above only appeared because that synthetic task was engineered so
+single features were useless and only hidden pairs predicted.  Real data isn't like
+that.  Net: gradient-free conjunction selection is a real mechanism with real
+headroom ONLY on genuinely interaction-dominated problems; on linearly-predictable
+data the one-shot bundle wins -- the same "the encoding already did the learning"
+lesson as the Hebbian study.
 """
 import numpy as np
 from octonion_lm import octo_mul
