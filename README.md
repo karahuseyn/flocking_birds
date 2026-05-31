@@ -535,6 +535,14 @@ one-shot bundle : 88.9%
 adaptive codes  : 92.0%   (+3.1 points, no gradients, no backprop)
 ```
 
+The same gradient-free adaptation also sharpens **differential-diagnosis ranking** under
+heavier noise (40% dropout, +4 random symptoms), base64-verified:
+
+```
+top-1 : 71.3% -> 75.9%   (+4.6)
+top-3 : 86.4% -> 90.2%   (+3.8)
+```
+
 Honest scope: the gain appears only when the code is capacity-limited and noisy (codes
 collide). On a roomy code or clean data the one-shot bundle is already optimal (100%) and
 there is nothing to learn. That is the consistent lesson across all three studies —
