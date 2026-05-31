@@ -123,7 +123,9 @@ class Encoder:
         bits = np.zeros(self.W * 64, dtype=np.uint8); bits[:self.D] = (vec > 0)
         return np.packbits(bits).view(np.uint64)
 
-CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "answerer_cache2.npz")
+BIOMED_CHARS = 70_000_000        # how much of the PubMed corpus to scan
+BIOMED_MAX = 400_000             # cap added PubMed sentences (RAM-bounded)
+CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "answerer_cache3.npz")
 
 class OctonionAnswerer:
     def fit(self, qa):
@@ -139,6 +141,20 @@ class OctonionAnswerer:
                     s = " ".join(m.group().split())
                     if good_sentence(s) and s.lower()[:90] not in seen:
                         seen.add(s.lower()[:90]); sents.append(s); focus.append(f)
+            # enlarge the knowledge base with real PubMed clinical-trial sentences
+            # (focus left blank: they feed the aspect answers, not the differential)
+            bm = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus_biomed.txt")
+            if os.path.exists(bm):
+                txt = open(bm, encoding="utf-8").read(BIOMED_CHARS)
+                added = 0
+                for m in SENT.finditer(txt):
+                    s = " ".join(m.group().split())
+                    if good_sentence(s) and s.lower()[:90] not in seen:
+                        seen.add(s.lower()[:90]); sents.append(s); focus.append("")
+                        added += 1
+                        if added >= BIOMED_MAX:
+                            break
+                print(f"  added {added:,} PubMed sentences to the knowledge base")
             self.sents, self.focus = sents, focus
             docs = [tokenize(s) for s in sents]; df = {}
             for toks in docs:
@@ -167,14 +183,30 @@ class OctonionAnswerer:
         pool = sorted(set(pool), key=lambda t: -self.enc.idf[self.enc.stoi[t]])
         return pool[:n]
 
-    def _pool(self, query, anchors, pool=200):
+    def _topic_ids(self, topic):
+        """Indices of every sentence that mentions the primary topic word -- a hard
+        on-topic constraint so a big, mixed corpus can't drift off subject."""
+        key = (self._anchors(topic, n=1) or [None])[0]
+        if key is None:
+            return None, None
+        if not hasattr(self, "_topic_cache"):
+            self._topic_cache = {}
+        if key not in self._topic_cache:
+            self._topic_cache[key] = np.array([i for i in range(len(self.sents))
+                                               if key in self.stoks[i]])
+        return key, self._topic_cache[key]
+
+    def _pool(self, query, anchors, pool=200, restrict=None):
         q = self.enc.pack(self.enc.encode(query))
-        cand = self.lsh.query(q)
-        if len(cand) < pool:
-            cand = np.arange(len(self.sents))
+        if restrict is not None and len(restrict) >= 3:
+            cand = restrict                              # only on-topic sentences
+        else:
+            cand = self.lsh.query(q)
+            if len(cand) < pool:
+                cand = np.arange(len(self.sents))
         ham = np.bitwise_count(self.bank[cand] ^ q).sum(1)
         idx = cand[ham.argsort()[:pool]]
-        if anchors:
+        if anchors and restrict is None:
             keep = [i for i in idx if self.stoks[i] & set(anchors)]
             if len(keep) >= 5:
                 idx = np.array(keep)
@@ -224,14 +256,16 @@ class OctonionAnswerer:
 
     def aspect_answer(self, query):
         anchors = self._anchors(query)
+        topic, restrict = self._topic_ids(query)        # hard on-topic constraint
         ql = query.lower()
         present = [a for a, kw in ASPECTS if kw and any(k in ql for k in kw)] \
             or ["Overview", "Symptoms", "Causes & risks", "Treatment"]
-        out = [f"*(topic: {', '.join(anchors)})*"] if anchors else []
+        hdr = f"*(topic: {topic})*" if topic else ""
+        out = [hdr] if hdr else []
         used = set()
         for asp in present:
             kw = dict(ASPECTS)[asp]
-            idx, sims = self._pool(query + " " + " ".join(kw), anchors)
+            idx, sims = self._pool(query + " " + " ".join(kw), anchors, restrict=restrict)
             picks = [i for i in self._mmr(idx, sims, k=4) if i not in used][:3]
             used.update(picks)
             if picks:
