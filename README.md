@@ -300,3 +300,21 @@ division-algebra reps), but the bind moves from the octonion product to per-bloc
 products; the pure-product binding (steps 1–2) remains the higher-fidelity, lower-capacity
 variant. Net: an O(n), softmax-free, gradient-free, octonion-organised memory that matches
 softmax attention's in-context recall.
+
+`octonion_speed.py` (step 4) is the payoff — the *cost*. Having matched softmax on
+accuracy, we time both as the sequence grows (49 octonion blocks vs full causal softmax
+attention):
+
+```
+ len L   octonion O(n)   softmax O(n²)   speedup   attn-matrix memory
+  1024        31.7 ms        101.9 ms      3.2x          8.4 MB
+  2048        48.2 ms        423.7 ms      8.8x         33.6 MB
+  4096        85.1 ms       1446.6 ms     17.0x        134.2 MB
+  8192       169.7 ms       5547.9 ms     32.7x        536.9 MB
+```
+
+Octonion time doubles when L doubles (**linear**); softmax time quadruples
+(**quadratic**), so the gap widens without bound. And the octonion state is a constant
+**25 KB for any length**, while softmax's attention matrix grows as L² (537 MB at 8 192).
+At 8 192 tokens that is **~33× faster and ~21 000× less attention memory** — the
+transformer's quadratic wall, removed, with the octonion structure intact.
