@@ -846,7 +846,19 @@ syntactic rhythm (action-oscillation stayed 0.087 vs real 0.127) and worsened dr
 conclusion: the operators are correct and elegant on their own, but a phase cycle is the wrong way
 to impose syntax; the octonion-bind proposition state (drift 0.243) stays the best generator. The
 connectives likely matter for *reasoning over* propositions (De Morgan / IMPLIES are exact), not
-for forcing surface syntax.
+for forcing surface syntax. 
+
+**What did raise syntactic rhythm: a direct verb/noun alternation drive (base64-verified).**
+Where the logic phase-cycle failed, simply biasing toward a verb when none occurred recently
+(and against one otherwise) moved action-oscillation 0.087 -> 0.120 (real text 0.127) and matched
+real local-coherence exactly (0.879). Verbs now interleave visibly ("...bp reducing and decreasing
+sleep latency, decreased total and LDL cholesterol lowering ... fasting glucose insulin c peptide
+levels decreased ... increased significantly in both groups"). Honest cost: in dense numeric
+clinical lists the alternation drive fights the repetition penalty and lets value-phrases repeat.
+Net state of gradient-free generation: fluency, topic flow, proposition binding, and syntactic
+rhythm are each measurable and individually improved (all O(n), no backprop); what remains open is
+genuine inference -- if/then chains between propositions -- where the verified logic operators
+(De Morgan / IMPLIES exact) likely belong, not in surface generation.
 
 ## The arc, in one line
 
