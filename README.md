@@ -483,6 +483,29 @@ bundled HDC code, the *encoding* has already done the learning. Gradient-free tr
 real headroom must therefore adapt the **codebook/feature map** itself, not just the
 prototypes — the honest next direction.
 
+## Gradient-free learning that actually climbs: conjunction selection
+
+The Hebbian study above moves *prototypes* and finds no headroom. `octonion_select.py`
+moves the other lever — the **feature map** — and it works. The recipe is symbolic and
+gradient-free: propose a large pool of Fano-conjunctions (octonion products
+`code_i ⊗ code_j`, coincidence-detecting dendrites), **score** each by the mutual
+information between its activation and the label, and **keep** the informative ones —
+developmental synaptic pruning, not gradient descent.
+
+On a 16-class task where each class is the XOR of one hidden bit-pair (single bits are
+useless by construction), base64-verified over 5 seeds:
+
+```
+random conjunctions (no learning) :  9.2%
+selected by I(pair ; class)       : 98.3%   <- gradient-free representation learning
+true signature pairs recovered    : 16 / 16
+```
+
+This is the honest positive counterpart to the Hebbian negative result: on a bundled
+octonion/HDC code the *encoding* already did the linear work, so learning has to adapt
+**which conjunctions exist** — and when it does, accuracy climbs from chance to ~98% with
+no backprop, no gradients, octonions throughout.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
