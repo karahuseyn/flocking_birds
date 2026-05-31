@@ -560,7 +560,16 @@ codes — no products are exploited. The octonion structure is load-bearing prec
 **division-algebra inverse** is used for content-addressed unbinding: on associative recall the
 octonion product gives 100% at 8 pairs and 86.7% at 32, while elementwise binding (no clean
 inverse) collapses to 3.0% and 0.3%. One coherent rule across the whole project: octonions earn
-their keep when you *bind and unbind*, not when you merely bundle.
+their keep when you *bind and unbind*, not when you merely bundle. One negative
+result sharpens this further (base64-verified): trying to *raise recall capacity* by
+gradient-free **decorrelation of the keys** — anti-Hebbian pushes to separate colliding
+keys on the manifold — does **not** work (gain −0.9 ± 4.4 over 12 seeds; an early +5.7 was a
+4-seed fluke). The reason is instructive: in high dimension random keys are already
+near-orthogonal, so there is no correlation to remove; the recall ceiling at high load comes
+from the bundle's intrinsic √n crosstalk, not key correlation. The levers that *do* raise
+capacity are more dimensions (slots ∝ capacity) and the outer-product/delta form, not key
+rotation — so adaptive code rotation pays off for *classification under collision*, but the
+matching idea for *recall* is a dead end.
 
 ## The arc, in one line
 
