@@ -48,8 +48,9 @@ GROUPS = [
         ("octonion_analogy",   "a:b::c:d on word analogies; +6-10 pts on morphology"),
         ("octonion_compose",   "chaining transports -> zero-shot multi-step reasoning"),
     ]),
-    ("Toward fluent gradient-free generation (root attempt)", [
-        ("octonion_semantic",  "PMI-SVD meaning + n-gram fluency + manifold flow; prompt-faithful, no backprop"),
+    ("Toward fluent gradient-free generation (root attempts)", [
+        ("octonion_semantic",  "PMI-SVD meaning + n-gram fluency + evolving discourse state; prompt-faithful"),
+        ("octonion_proposition","octonion-BIND discourse state (role(x)filler, Fano roles); matches real topic-drift"),
     ]),
 ]
 

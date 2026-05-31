@@ -808,7 +808,31 @@ binding `subject ⊗ predicate`, which additive scoring cannot represent. The ev
 generator (drift 0.37, flowing) remains the best generator; this avenue is a dead end as posed.
 The genuine open problem stands: representing a proposition (a bound subject–predicate that the
 next word must be *consistent with*) gradient-free — the place octonion bind would finally be
-load-bearing for generation, not just recall.
+load-bearing for generation, not just recall. 
+
+**Done, base64-verified: a real octonion BIND finally carries a proposition.** Instead of
+scalar weights, the discourse state is a sum of octonion-bound role-filler pairs:
+`S ← decay·S + role ⊗ word`, with two roles built by *Fano-path walks* over the 7 imaginary
+units (subject vs predicate), content words routed to the subject role and action-like words to
+the predicate role. The next word is scored by how well it fills the roles *unbound* from S via
+the exact octonion inverse (`filler ≈ role⁻¹ ⊗ S`) — i.e. by consistency with the proposition so
+far. This is `octonion_proposition.py`. Discourse signature vs real text (local-coherence /
+start-end drift):
+
+```
+real text                       0.879 / 0.217
+evolving scalar state           0.925 / 0.370   (flows, no proposition)
+two scalar entity+action states 0.959 / 0.560   (collapses, loops "with with")
+octonion BIND (ws 1.5, wp 3.5)  0.906 / 0.243   (matches real drift AND coherence)
+```
+
+It generates real clinical-trial argument flow: *"the treatment reduced bp ... decreasing sleep
+latency, decreased total and LDL cholesterol concentrations ... atorvastatin mg with pioglitazone
+monotherapy"*. The octonion bind succeeds where two scalar states collapsed (drift 0.24 vs 0.56),
+because a true `subject ⊗ predicate` binding can represent a proposition that additive scoring
+cannot — the first time the algebra is load-bearing for *generation*, not just recall. Honest
+remaining gap: subject/predicate oscillation rhythm is still ~0.08 vs real 0.13, so it binds
+topic+action but not yet full subject-verb-object syntax — the next open step.
 
 ## The arc, in one line
 
