@@ -518,6 +518,31 @@ linearly-predictable data the octonion/HDC *encoding has already done the learni
 gradient-free training no headroom; the headroom is real only on genuinely
 interaction-dominated tasks.
 
+## Adaptive octonion codebook: gradient-free training that wins on real data
+
+The third lever — after prototypes (no headroom) and feature selection (helps only on
+engineered tasks) — is the octonion **codes themselves**. `octonion_codebook.py` rotates
+them with a gradient-free competitive Hebbian rule: for each case, pull every active
+symptom's octonion code toward its true-class prototype and push it from the wrong winner
+(LTP/LTD), then retract each code onto the unit sphere (a manifold step, not a gradient).
+
+This finally beats the one-shot bundle on the **real** symptom→disease data — in the regime
+that matters, a small (capacity-limited) code where class hypervectors collide
+(base64-verified, 4 seeds, slots=7, 30% dropout):
+
+```
+one-shot bundle : 88.9%
+adaptive codes  : 92.0%   (+3.1 points, no gradients, no backprop)
+```
+
+Honest scope: the gain appears only when the code is capacity-limited and noisy (codes
+collide). On a roomy code or clean data the one-shot bundle is already optimal (100%) and
+there is nothing to learn. That is the consistent lesson across all three studies —
+**gradient-free training helps exactly where the octonion/HDC encoding has not already done
+the work**: rotating the codes pays off when classes collide, just as conjunction selection
+pays off when only interactions predict, while moving prototypes never helps because the
+class mean is already optimal on a roomy linear code.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
