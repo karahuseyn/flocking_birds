@@ -543,6 +543,17 @@ the work**: rotating the codes pays off when classes collide, just as conjunctio
 pays off when only interactions predict, while moving prototypes never helps because the
 class mean is already optimal on a roomy linear code.
 
+**Is the octonion algebra actually needed? (ablation, base64-verified).** For the adaptive
+codebook the answer is honest: no — plain Euclidean unit vectors of the same dimension train
+just as well (octonion 89.9→92.0 vs vector 91.2→92.7), and octonion / elementwise / circular-
+convolution binding are interchangeable on this task (all ≈17%). The gain comes from the
+gradient-free training *rule*, not the algebra, because bundle-and-classify only ever *adds*
+codes — no products are exploited. The octonion structure is load-bearing precisely where the
+**division-algebra inverse** is used for content-addressed unbinding: on associative recall the
+octonion product gives 100% at 8 pairs and 86.7% at 32, while elementwise binding (no clean
+inverse) collapses to 3.0% and 0.3%. One coherent rule across the whole project: octonions earn
+their keep when you *bind and unbind*, not when you merely bundle.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
