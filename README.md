@@ -832,7 +832,21 @@ monotherapy"*. The octonion bind succeeds where two scalar states collapsed (dri
 because a true `subject ⊗ predicate` binding can represent a proposition that additive scoring
 cannot — the first time the algebra is load-bearing for *generation*, not just recall. Honest
 remaining gap: subject/predicate oscillation rhythm is still ~0.08 vs real 0.13, so it binds
-topic+action but not yet full subject-verb-object syntax — the next open step.
+topic+action but not yet full subject-verb-object syntax — the next open step. 
+
+**Logic operators verified, but logic-as-interlayer did not help generation (base64).**
+`octonion_logic.py` represents the classical connectives on the algebra and checks their laws:
+NOT involution, IMPLIES, and a reflection-based XOR all hold exactly (1.000); De Morgan holds
+*exactly and order-sensitively* (`conj(ab)=conj(b)conj(a)`; naive same-order -0.32, so
+non-commutativity carries the logical role order); AND is non-associative (0.35), a built-in
+context-dependent grouping of conjunctions. But injecting these as a subject->predicate->object
+phase cycle (advanced by an IMPLIES rotation on the role) into generation did **not** raise the
+syntactic rhythm (action-oscillation stayed 0.087 vs real 0.127) and worsened drift
+(0.243->0.495), because rotating the role each verb desynchronised the exact unbind. Honest
+conclusion: the operators are correct and elegant on their own, but a phase cycle is the wrong way
+to impose syntax; the octonion-bind proposition state (drift 0.243) stays the best generator. The
+connectives likely matter for *reasoning over* propositions (De Morgan / IMPLIES are exact), not
+for forcing surface syntax.
 
 ## The arc, in one line
 
