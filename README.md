@@ -769,7 +769,32 @@ This is the project's clearest step on long-range coherence: it is now a *measur
 optimisable* axis (topic drift), not a vague complaint — and a fixed prompt-topic anchor on the
 PMI-SVD manifold improves it 4.8x at no fluency cost. The remaining gap is *discourse* structure
 (claims connecting into an argument), which topic cosine does not capture and which a fixed
-anchor cannot supply.
+anchor cannot supply. 
+
+**From a frozen anchor to an evolving discourse state (base64-verified).** Real text has a
+measurable *discourse signature*: neighbouring topic-windows are very similar (local coherence
+~0.875) yet the topic genuinely moves across a paragraph (start→end drift ~0.386). A fixed
+anchor cannot reproduce this — it freezes the topic (drift stays ~0.65, looping the same
+words). So the anchor is replaced by a **slow EMA discourse state** `s ← (1−ρ)s + ρ·emb[next]`;
+candidates are scored by alignment with `s`, and `ρ` tunes how fast the topic may travel:
+
+```
+drift_rate ρ   local coherence   start→end drift     (real text: 0.875 / 0.386)
+   0.00 (fixed)     0.916            0.647
+   0.08             0.923            0.503
+   0.20             0.925            0.370   ← matches real text's drift, local coherence above it
+```
+
+At ρ≈0.2 the generator matches real text's drift while staying locally smooth, and the output
+*flows like an argument* instead of looping: `patients with diabetes → chronic stable angina
+pectoris → congestive heart failure → symptom distress → established cvd`, or `the treatment
+reduced bp → decreasing sleep latency → symptoms of dementia → safe alternative to
+conventional`. This is the clearest progress toward discourse the project reaches, all
+gradient-free: long-range structure becomes a *controllable dynamical quantity* (the drift rate
+of an evolving state on the PMI-SVD manifold), not a fixed constraint. The honest remaining gap
+is *logical* structure — the topic now travels plausibly, but the steps are associative, not
+inferential (no claim→evidence→conclusion); that needs a state that carries propositions, not
+just topic.
 
 ## The arc, in one line
 
