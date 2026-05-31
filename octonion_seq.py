@@ -78,7 +78,7 @@ class OctonionSeq:
             c = int(self._score(W, recent).argmax()); out.append(c); recent.append(c)
         return out
 
-def predict_next_word(prompt, m=3, heads=8, slots=49, decay=0.8, seed=1916):
+def predict_next_word(prompt, m=6, heads=8, slots=49, decay=0.8, seed=1916):
     """Word-level in-context induction: build an octonion memory from the words of
     the prompt and recall the most likely next word.  Discrete words are near-
     orthogonal codes, so recall is far cleaner than char-level -- it even resolves

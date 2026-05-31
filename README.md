@@ -388,6 +388,20 @@ copying would want learned projections). But the *mechanism* — attention-style
 recall, depth, gating, multi-head capacity, all gradient-free, O(n), octonion to the core
 — runs end to end on real prompts.
 
+`octonion_reason.py` (step 7) stacks two octonion memories for **multi-step in-context
+reasoning** — the multi-hop circuit. The prompt sets up `A→B` and `B→C`; querying A
+chains the recall (A→B, then B→C) to return C, which one layer cannot reach:
+
+```
+chains   1 hop (A→B)   2 hops (A→B→C)
+   8       100.0%         100.0%
+  16       100.0%         100.0%
+  24       100.0%         100.0%
+```
+
+Two stacked octonion memories chain the recall — multi-step reasoning, no gradients,
+O(n), octonions throughout (layer 2 simply queries with layer 1's recalled item).
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
