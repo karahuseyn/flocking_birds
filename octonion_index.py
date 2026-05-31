@@ -51,6 +51,8 @@ GROUPS = [
     ("Toward fluent gradient-free generation (root attempts)", [
         ("octonion_semantic",  "PMI-SVD meaning + n-gram fluency + evolving discourse state; prompt-faithful"),
         ("octonion_proposition","octonion-BIND discourse state (role(x)filler, Fano roles); matches real topic-drift"),
+        ("octonion_logic",     "classical connectives on octonions; sequential inference exact (chain 1.000)"),
+        ("octonion_gpt",       "END-TO-END: all components in one gradient-free O(n) generator on a large corpus"),
     ]),
 ]
 
