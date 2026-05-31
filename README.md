@@ -252,8 +252,27 @@ This is the moment the octonion structure becomes **load-bearing**: the binding
 that was idle for the n-gram char model (the ablation found it interchangeable
 with random permutations there) is *exactly* what content-addressable recall
 needs. We have the attention mechanism's core — associative recall — running
-gradient-free and in linear time on the octonion algebra. The honest next step is
-to wire it into a *causal sequence* model (an induction head over a token stream)
-and weigh its speed/quality against a small softmax transformer; matching a trained
-transformer on open-ended language will need some learning, but the *mechanism*
-here is genuinely lightweight.
+gradient-free and in linear time on the octonion algebra.
+
+`octonion_induction.py` takes the next step: a **causal, softmax-free, O(n)
+sequence model**. Wired as an *induction head* (key = previous token, value =
+current token, memory = causal running sum), it does in-context copying — predict
+whatever followed the current token earlier in *this* sequence — which a frozen
+n-gram cannot (the key→value map is random per sequence). Against a softmax-attention
+reference using the same embeddings:
+
+```
+343 octonions, in-context recall   octonion O(n)   softmax O(n^2)   frozen bigram
+                       8 pairs          96.7%           97.7%           ~1.3%
+                      16 pairs          95.7%           97.3%           ~2.3%
+                      32 pairs          88.0%           93.3%           ~0.7%
+```
+
+The octonion induction head **matches softmax attention** at low/moderate load
+while costing O(n) with no softmax and no n×n matrix; the frozen bigram is at
+chance, confirming the task genuinely needs in-context learning. The honest gap:
+under heavy load (many bindings crammed into one sequence) softmax pulls ~6–10
+points ahead — the known linear-attention capacity limit (state ∝ dim). Closing it
+is the next step (a delta-rule / gated update à la DeltaNet, kept on the octonion
+algebra). Matching a *trained* transformer on open-ended language will need some
+learning, but the mechanism here is genuinely lightweight and stays octonion-centric.
