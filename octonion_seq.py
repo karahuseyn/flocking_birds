@@ -78,6 +78,37 @@ class OctonionSeq:
             c = int(self._score(W, recent).argmax()); out.append(c); recent.append(c)
         return out
 
+def predict_next_word(prompt, m=3, heads=8, slots=49, decay=0.8, seed=1916):
+    """Word-level in-context induction: build an octonion memory from the words of
+    the prompt and recall the most likely next word.  Discrete words are near-
+    orthogonal codes, so recall is far cleaner than char-level -- it even resolves
+    ambiguity ('alice lives in paris . ... alice lives in' -> 'paris', not 'tokyo')."""
+    words = prompt.lower().replace(".", " . ").replace(",", " , ").split()
+    if len(words) < 2:
+        return []
+    vocab = sorted(set(words)); stoi = {w: i for i, w in enumerate(vocab)}; V = len(vocab)
+    rng = np.random.default_rng(seed)
+    emb = rand_unit((heads, V, slots, 8), rng)
+    roles = rand_unit((heads, m, slots, 8), rng)
+    w = decay ** np.arange(m)
+    cb = emb.reshape(heads, V, -1); cb = cb / np.linalg.norm(cb, axis=2, keepdims=True)
+    def key(recent):
+        acc = np.zeros((heads, slots, 8))
+        for j, wd in enumerate(reversed(recent[-m:])):
+            acc += w[j] * octo_mul(roles[:, j], emb[:, stoi[wd]])
+        n = np.linalg.norm(acc.reshape(heads, -1), axis=1)
+        kn = acc / np.maximum(n, 1e-9)[:, None, None]
+        return kn / (np.linalg.norm(kn, axis=2, keepdims=True) + 1e-9)
+    W = np.zeros((heads, slots, 8, 8)); recent = []
+    for x in words:
+        if recent:
+            W = W + np.einsum("hki,hkj->hkij", emb[:, stoi[x]], key(recent))
+        recent.append(x)
+    retr = np.einsum("hkij,hkj->hki", W, key(recent)).reshape(heads, -1)
+    s = np.einsum("hvd,hd->hv", cb, retr).sum(0)
+    top = s.argsort()[::-1][:5]
+    return [(vocab[i], float(s[i] / (s[top[0]] + 1e-9))) for i in top]
+
 def global_bigram(ids, V):
     P = np.zeros((V, V)); np.add.at(P, (ids[:-1], ids[1:]), 1.0)
     return P.argmax(1)
@@ -105,19 +136,14 @@ def main():
 
     if len(sys.argv) > 1:                                     # --- test YOUR prompt ---
         prompt = " ".join(sys.argv[1:])
-        model = OctonionSeq(V, heads=12)
-        toks = enc(prompt.lower())
-        W, recent = model.ingest(toks)
-        s = model._score(W, recent); s = s / (np.abs(s).max() + 1e-9)
-        top = s.argsort()[::-1][:5]
         print(f'prompt:  "{prompt}"\n')
-        print("most likely next char, recalled from the prompt:")
-        for c in top:
-            ch = itos[c].replace("\n", "\\n"); bar = "#" * int(max(s[c], 0) * 30)
-            print(f"   '{ch}'  {s[c]:+.2f}  {bar}")
-        cont = dec(model.generate(W, recent, 12))
-        print(f'\nshort continuation (frozen prompt memory):  "{cont}"')
-        print("(no global training -- it only recalls patterns present in the prompt)")
+        ranked = predict_next_word(prompt)
+        print("most likely next word, recalled in-context from the prompt:")
+        for word, sc in ranked:
+            bar = "#" * int(max(sc, 0) * 28)
+            print(f"   {word:<14} {sc:+.2f}  {bar}")
+        print("\n(gradient-free, octonion in-context memory -- it recalls associations you")
+        print(" set up in the prompt itself; give it a repeated pattern to complete.)")
         return
 
     print(f"real text: tinyShakespeare, {len(ids):,} chars, vocab {V}")

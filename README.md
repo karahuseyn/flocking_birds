@@ -368,13 +368,25 @@ heads   first pass   on repeat   bigram   rescue (chars the n-gram gets wrong)
 The ~11% → 61% jump when the context repeats *is* in-context learning, gradient-free, on
 real text; of the characters the bigram gets wrong, the octonion memory recalls **~54%
 correctly from the prompt itself**, information no n-gram has. Multiple heads lift recall
-(53→61%) and then saturate (~8 heads suffice). Honest limits: absolute fidelity plateaus
-around 61% and free-running *generation* drifts into fragments (`octonion_seq.py "your
-prompt"` shows the top recalled next-chars and a short continuation) — char-level copying
-is noisy because the projections are fixed/random; word/token-level recall is far cleaner
-(see `octonion_chat.py`), and sharper char copying would want learned projections. But the
-*mechanism* — attention-style in-context recall, depth, gating, all gradient-free, O(n),
-octonion to the core — runs end to end on real prompts.
+(53→61%) and then saturate (~8 heads suffice). At **word level** the same mechanism is
+much cleaner — discrete words are near-orthogonal codes, so recall is crisp and even
+*resolves ambiguity in context*. Try your own prompt:
+
+```
+$ python3 octonion_seq.py "john drives a tesla . mary drives a toyota . john drives a"
+   tesla   +1.00   ###########################
+   toyota  +0.83   #######################
+$ python3 octonion_seq.py "to cure fever give paracetamol . to cure cough give syrup . to cure fever give"
+   paracetamol  +1.00   ###########################
+   syrup        +0.70   ###################
+```
+
+It recalls *john→tesla* (not toyota) and *fever→paracetamol* (not syrup) — genuine
+in-context conditional recall, gradient-free. Honest limit: char-level free generation
+still drifts into fragments (fixed/random projections cap the precision; sharper char
+copying would want learned projections). But the *mechanism* — attention-style in-context
+recall, depth, gating, multi-head capacity, all gradient-free, O(n), octonion to the core
+— runs end to end on real prompts.
 
 ## The arc, in one line
 
