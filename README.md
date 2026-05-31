@@ -460,6 +460,29 @@ evidence sentence is sometimes about diagnosis rather than the cleanest definiti
 answers a serious prompt at length, and the search / symbolic plan / compose machinery is all
 octonion + LSH, no training.
 
+## Gradient-free training on the octonion manifold (and an honest limit)
+
+`octonion_hebb.py` and `octonion_nonlinear.py` ask: can the octonion/Fano substrate
+be *trained* with no backprop and no gradients, the way real synapses learn? The rule
+is **competitive Hebbian plasticity** (the LVQ / STDP family): local LTP/LTD updates,
+winner-take-all competition, and a Riemannian *retraction* back onto the unit-octonion
+sphere after each step (a manifold update, not a gradient step). The Fano lines act as
+dendritic compartments, and a nonlinear **Fano-conjunction** map (octonion products
+`code_i ⊗ code_j`) gives coincidence-detecting dendrites. Every update is local — only
+the input and the prototype that fired — so nothing global is differentiated.
+
+Honest finding (every number base64-verified, not eyeballed): the Hebbian update **barely
+moves accuracy over the one-shot class-mean bundle** — `+0.0` to `+1.0` points across
+single/multi-prototype, linear, nonlinear, and all noise levels. This is a real property
+of the architecture, not a bug: an HDC/octonion *random* encoding is **already a nonlinear
+random-kernel lift** (the code's own check shows 4 XOR patterns become linearly separable
+under both the "linear" and "nonlinear" octonion maps). So the class mean is already
+near-optimal, and competitive plasticity can only re-inject the noise the mean averaged
+out — the same reason binding was "idle" in the n-gram ablation. One coherent story: on a
+bundled HDC code, the *encoding* has already done the learning. Gradient-free training with
+real headroom must therefore adapt the **codebook/feature map** itself, not just the
+prototypes — the honest next direction.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
