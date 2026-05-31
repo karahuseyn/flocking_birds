@@ -571,6 +571,34 @@ capacity are more dimensions (slots ∝ capacity) and the outer-product/delta fo
 rotation — so adaptive code rotation pays off for *classification under collision*, but the
 matching idea for *recall* is a dead end.
 
+## Fano paths as transport maps: gradient-free learning of object->object functions
+
+A different reading of "Fano path", the user's: not a sharp hop between basis units but a
+**smooth norm-preserving rotation** of the unit-octonion sphere — a diffeomorphism that
+transports objects (manifold → manifold). Each Fano point `g` gives a generator
+`L_g` = left-multiplication by `e_g`; since octonions are a normed division algebra, `L_g`
+is antisymmetric with `L_g² = -I`, so `R_g(θ) = cos θ·I + sin θ·L_g` is an exact rotation of
+S⁷, and a Fano *path* is a composition of these.
+
+`octonion_transport.py` trains **on the Fano paths**, gradient-free: given examples of an
+unknown transport `xᵢ → tᵢ`, it composes Fano rotations by **matching pursuit** — at each
+step the best generator and angle are closed-form (`θ* = atan2(B, A)` maximising
+`Σ⟨R_g(θ)xᵢ, tᵢ⟩`). No backprop. Base64-verified:
+
+```
+hidden transport length   before   held-out alignment (cosine)
+        3                  0.39          0.94
+        5                  0.40          0.95
+        8                  0.21          0.89
+```
+
+It generalises to unseen objects — learning the *function*, not points. And here the
+octonion structure is genuinely **load-bearing** (a second place after bind/unbind): fitting
+with the 7 Fano generators reaches 0.949, with 7 random antisymmetric generators only 0.830,
+and random generators cannot even represent a Fano-built transport (0.628) — because the Fano
+generators form a closed algebra (`L_g² = -I`, the octonion multiplication rules) that random
+rotations do not.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
