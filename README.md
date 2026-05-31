@@ -442,25 +442,23 @@ the disease each MedQuAD entry is about, ranking candidate conditions:
 $ python3 octonion_answer.py "I drink a lot of tea ... a very brief, painless, momentary,
                               strong palpitation. What disease should I suspect?"
 (anchored on symptom: palpitation)
-1. Arrhythmia          — Symptoms of an arrhythmia include palpitations, a slow heartbeat,
-                         an irregular heartbeat, dizziness.
-2. Panic Disorder      — People with panic disorder have sudden and repeated attacks of fear.
-3. Low Blood Pressure  — A fast heartbeat or a heart that skips a beat (palpitations).
-4. Graves Disease      — People with hyperthyroidism may have a rapid heartbeat (palpitations).
-5. Mitral Valve Prolapse — The symptoms ... palpitations.
+1. Heart Palpitations  - The cause of palpitations may be hard to diagnose ...
+2. Marfan Syndrome     - You have shortness of breath, palpitations, or chest pain.
+3. Heart Palpitations? - Some people may be more likely than others to have palpitations.
+4. Arrhythmia          - ...why a person may be having palpitations or fainting spells ...
 ```
 
 Getting there needed a symbolic fix: a plain IDF anchor latched onto "tea" and returned
 nonsense ("Women", "Diarrhea", "IgA Nephropathy"). The fix marks query words against a
-**132-symptom lexicon** (with a small stemmer so *palpitation*~*palpitations*) and
-*requires* the single most-specific symptom to appear in every cited sentence — so the
-generic qualifier "painless" can't pull in unrelated diseases. Now it anchors on
-*palpitation* and returns a genuinely sensible differential: **Arrhythmia** first, plus
-panic disorder, hypotension, hyperthyroidism (Graves), and mitral valve prolapse — all real
-causes of palpitations. Honest limits: it's *extractive* (real sentences retrieved and
-arranged), not generative; it ranks by text match, so it lists candidates rather than
-triaging them by likelihood. But it answers a serious prompt at length, and the search /
-symbolic plan / compose machinery is all octonion + LSH, no training.
+**132-symptom lexicon** (with a small stemmer so palpitation~palpitations) and *requires*
+the single most-specific symptom to appear in every cited sentence, so the generic qualifier
+"painless" cannot pull in unrelated diseases. Now it anchors on palpitation and every cited
+condition is a real palpitation cause (heart palpitations, arrhythmia, Marfan). Honest
+limits: it is *extractive* (real sentences retrieved and arranged), not generative; it ranks
+by text match, so it lists candidates rather than triaging them by likelihood, and the cited
+evidence sentence is sometimes about diagnosis rather than the cleanest definition. But it
+answers a serious prompt at length, and the search / symbolic plan / compose machinery is all
+octonion + LSH, no training.
 
 ## The arc, in one line
 
