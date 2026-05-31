@@ -354,22 +354,27 @@ text** (tinyShakespeare): a context layer (last *m* chars bound into roles and b
 with a recency gate), an online per-block induction memory, and nearest-neighbour
 readout. We test the transformer-distinctive ability — **in-context learning** — the
 honest way (Olsson's induction test): feed a real passage, then repeat it, and see what
-the model predicts on the repeat.
+the model predicts on the repeat. Capacity is boosted by **multiple heads** — each an
+independent octonion memory with its own random codebook, so the crosstalk noise is
+independent and soft-voting cuts it (still O(n), still gradient-free):
 
 ```
-octonion in-context memory,  first pass : 11.7%   (nothing to recall yet)
-octonion in-context memory,  on repeat  : 56.3%   (recalls the passage)
-global bigram baseline,      on repeat  : 27.1%   (knows only corpus statistics)
+heads   first pass   on repeat   bigram   rescue (chars the n-gram gets wrong)
+   1       10.5%        53.5%     28.1%            46.0%
+   8       10.7%        61.1%     28.1%            53.6%
+  32       10.5%        60.9%     28.1%            53.2%
 ```
 
-The 12% → 56% jump when the context repeats *is* in-context learning, gradient-free,
-on real text — and of the characters the bigram gets wrong, the octonion memory recalls
-**48% correctly from the prompt itself**, information no n-gram has. Honest limit:
-absolute fidelity is moderate (per-character copying is noisy) because the projections
-are fixed/random and the O(n) memory has finite capacity; sharper copying would want
-learned projections or O(n²) kNN recall. But the *mechanism* — attention-style in-context
-recall, depth, gating, all gradient-free, O(n), and octonion to the core — runs end to
-end on real prompts.
+The ~11% → 61% jump when the context repeats *is* in-context learning, gradient-free, on
+real text; of the characters the bigram gets wrong, the octonion memory recalls **~54%
+correctly from the prompt itself**, information no n-gram has. Multiple heads lift recall
+(53→61%) and then saturate (~8 heads suffice). Honest limits: absolute fidelity plateaus
+around 61% and free-running *generation* drifts into fragments (`octonion_seq.py "your
+prompt"` shows the top recalled next-chars and a short continuation) — char-level copying
+is noisy because the projections are fixed/random; word/token-level recall is far cleaner
+(see `octonion_chat.py`), and sharper char copying would want learned projections. But the
+*mechanism* — attention-style in-context recall, depth, gating, all gradient-free, O(n),
+octonion to the core — runs end to end on real prompts.
 
 ## The arc, in one line
 
