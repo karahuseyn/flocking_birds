@@ -276,3 +276,27 @@ points ahead — the known linear-attention capacity limit (state ∝ dim). Clos
 is the next step (a delta-rule / gated update à la DeltaNet, kept on the octonion
 algebra). Matching a *trained* transformer on open-ended language will need some
 learning, but the mechanism here is genuinely lightweight and stays octonion-centric.
+
+`octonion_delta.py` (step 3) closes that heavy-load gap. The fix keeps the octonion
+block structure (343 = 7³ blocks of dimension 8) but switches the binding to the
+**outer-product** form linear attention actually uses — a tiny per-block fast-weight
+matrix. That alone matches softmax attention across the board, O(n) and softmax-free:
+
+```
+in-context recall    additive-block O(n)    softmax O(n²)
+        16 pairs           98.5%               97.5%
+        32 pairs           96.5%               96.5%
+        48 pairs           94.0%               94.0%   (was 84% with product binding)
+        64 pairs           90.0%               94.0%
+```
+
+Two honest findings: (1) the **delta rule** (DeltaNet's error-correcting update) did
+*not* help — at β=1 it over-corrects in the 8-dim blocks and collapses (98→24%); and on
+the octonion-*product* memory the naive delta wipes everything, because octonions' *exact*
+inverse makes `bind(k, unbind(k,S)) = S` — the very exactness that was step 1's strength
+defeats it (3.7% recall ≈ chance). (2) What closed the gap was the binding *form*, not
+delta. The representations stay fully octonionic (7³ blocks, the octonion codebook,
+division-algebra reps), but the bind moves from the octonion product to per-block outer
+products; the pure-product binding (steps 1–2) remains the higher-fidelity, lower-capacity
+variant. Net: an O(n), softmax-free, gradient-free, octonion-organised memory that matches
+softmax attention's in-context recall.
