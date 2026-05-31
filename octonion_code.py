@@ -16,8 +16,18 @@ What this is, honestly: pattern/idiom retrieval, not execution.  Just as the mod
 recalled skeletons (signatures, imports, type-checks, docstrings) look like real code.  The
 generated code is syntactically plausible and idiomatic but not guaranteed to run.
 
-Corpus: ~10 MB of real .py from django / flask / requests / scikit-learn / pandas / black
-(data-table files like unicodedata excluded; each file has >=2 def/class).  No backprop.
+Corpus: ~18 MB of real .py from 20 libraries (django, flask, fastapi, pydantic, sqlalchemy,
+scikit-learn, pandas, celery, scrapy, aiohttp, click, typer, ...; data-table files excluded,
+each file has >=2 def/class).  No backprop.
+
+Scale finding (base64-verified): more libraries broadened the idioms learned -- the model now
+emits modern *typed* Python (`def f(self, x: str) -> None:`, `class Config(BaseConfig):`,
+`async def`, `raise ValueError(...)`, `:param ...:` docstrings).  One structural limit remains:
+when *it* writes a `def`, the function NAME is usually dropped (`def(self, ...)`).  This is not
+a vocab problem (vocab 20k vs 35k both do it): every function name is individually rare, so the
+n-gram's most-likely continuation after `def` is `(self` -- the model recalls the common
+skeleton but cannot *invent* a fresh name, exactly as it cannot compute an unseen sum.  Seed a
+name (`generate(M, "def validate")`) and the chain continues correctly.
 """
 import re, sys, io, zipfile, os, urllib.request
 import numpy as np
@@ -78,7 +88,7 @@ def detokenize(toks):
             s += w
     return s
 
-def build(text, vocab_size=20000):
+def build(text, vocab_size=30000):
     toks = tokenize(text)
     vc = Counter(toks); vocab = [w for w, _ in vc.most_common(vocab_size)]
     wi = {w: i for i, w in enumerate(vocab)}
