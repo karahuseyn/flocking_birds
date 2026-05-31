@@ -9,3 +9,4 @@ __pycache__/
 symptoms_train.csv
 # fetched medical Q&A datasets
 *QAs.json
+answerer_cache.npz

@@ -402,6 +402,40 @@ chains   1 hop (A→B)   2 hops (A→B→C)
 Two stacked octonion memories chain the recall — multi-step reasoning, no gradients,
 O(n), octonions throughout (layer 2 simply queries with layer 1's recalled item).
 
+## A long answer to a serious prompt (retrieval-augmented)
+
+`octonion_answer.py` (step 8) is the ChatGPT-shaped payoff — a *long* answer to a
+serious question. Since the octonion stack recalls rather than generates, the answer is
+**composed from real, authoritative sentences** (MedQuAD / NIH, ~111k sentences), with
+three techniques on the octonion base:
+
+- **effective search** — every sentence is an octonion HDC hypervector; a bit-sampling
+  **LSH** index finds the relevant few fast (not a full scan);
+- **symbolic plan** — the question is decomposed into aspects (symptoms / causes /
+  diagnosis / treatment / prevention); each aspect is searched separately and becomes a
+  heading, with a topic *anchor* constraint (the rarest query term must appear) to stop
+  drift;
+- **MMR composition** — within an aspect, sentences are picked to be relevant *and*
+  mutually diverse.
+
+```
+$ python3 octonion_answer.py "What is hypertension and how is it diagnosed and treated?"
+
+## Diagnosis
+High blood pressure (hypertension) is usually diagnosed using blood pressure
+measurement. ... sometimes additional tests are recommended to evaluate symptoms.
+
+## Treatment
+High blood pressure (hypertension) is treated with medication. ... medication or
+lifestyle changes. The disease is sometimes treated with surgery.
+```
+
+For "type 2 diabetes" it surfaces the right drug (*metformin*), risk factors, and that
+symptoms appear slowly — on-topic and authoritative, gradient-free, octonion throughout.
+Honest limit: it's *extractive* (real sentences retrieved and arranged), not generative,
+and the odd filler sentence slips through; but it answers a serious prompt at length, and
+the search/plan/compose machinery is all octonion + LSH, no training.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
