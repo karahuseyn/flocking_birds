@@ -257,37 +257,3 @@ to wire it into a *causal sequence* model (an induction head over a token stream
 and weigh its speed/quality against a small softmax transformer; matching a trained
 transformer on open-ended language will need some learning, but the *mechanism*
 here is genuinely lightweight.
-
-## Toward a transformer alternative: octonion linear attention
-
-The one essential trick of a transformer is *content-based* mixing — each query
-pulls, from everything seen, the value bound to the matching key. There is a known
-identity that makes this cheap: **linear attention ≡ a fast-weight associative
-memory ≡ HDC bind / bundle / unbind** (Katharopoulos 2020; Schlag 2021, *Linear
-Transformers are Secretly Fast Weight Programmers* — the lineage behind RWKV /
-RetNet / DeltaNet). Keep a running memory `S = Σᵢ bind(kᵢ, vᵢ)` (a causal running
-sum → **O(n)**, no softmax, no O(n²)) and read it with `unbind(q, S)`.
-
-`octonion_attention.py` implements exactly this with the octonion product as the
-binding operator. Octonions are one of only four normed division algebras, so the
-**inverse property holds exactly** — `k⁻¹(k·v) = v` — making the bind *exactly*
-invertible, unlike the circular convolution of classic HRR (only approximate). On
-the in-context associative-recall ("induction") task — the test that separates
-attention from an n-gram — the gradient-free octonion memory recovers the value
-bound to a query key with:
-
-```
-343 octonions (2744-dim):  100% up to 64 pairs, 98.5% at 128   (capacity ∝ dim)
- 49 octonions  (392-dim):  100% up to 16 pairs
-no-binding bundle baseline:  at chance — it cannot separate key from value
-```
-
-This is the moment the octonion structure becomes **load-bearing**: the binding
-that was idle for the n-gram char model (the ablation found it interchangeable
-with random permutations there) is *exactly* what content-addressable recall
-needs. We have the attention mechanism's core — associative recall — running
-gradient-free and in linear time on the octonion algebra. The honest next step is
-to wire it into a *causal sequence* model (an induction head over a token stream)
-and weigh its speed/quality against a small softmax transformer; matching a trained
-transformer on open-ended language will need some learning, but the *mechanism*
-here is genuinely lightweight.
