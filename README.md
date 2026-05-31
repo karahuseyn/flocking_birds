@@ -204,12 +204,14 @@ hypervector (`7**3 = 343` octonions) — and recall the **7 nearest** memories:
   clinically coherent — e.g. jaundice symptoms surface all five hepatitis variants
   together.
 
-- **`octonion_chat.py`** — a retrieval QA bot over ~2 300 real medical Q&A pairs. It
-  encodes your question as an IDF-weighted bundle of word octonions, recalls the seven
-  nearest stored questions, and replies with the best stored answer. Where a transformer
+- **`octonion_chat.py`** — a retrieval QA bot over **~23 000** real medical Q&A pairs
+  (eHealthForum + iCliniq + QuestionDoctor + WebMD). It encodes your question as a
+  stop-word-filtered, IDF-weighted bundle of word octonions, recalls the seven nearest
+  stored questions, and replies with the best stored answer. Where a transformer
   *generates*, this *recalls*. Paraphrase robustness (rephrase a question to ~60% of its
-  words, shuffled, then recall the exact original): **top-1 93.5%, top-7 99.0%**.
-  Run `python3 octonion_chat.py "my child has a fever and sore throat"`.
+  words, shuffled, then recall the exact original): **top-1 96.0%, top-7 99.3%** — and it
+  holds at 10× the knowledge base (the bank is only ~8 MB). Run
+  `python3 octonion_chat.py "my child has a fever and sore throat"`.
 
 Both are one gradient-free pass — the knowledge base *is* the model — and both follow
 the rule of 7 end to end.

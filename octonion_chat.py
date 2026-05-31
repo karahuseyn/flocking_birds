@@ -22,11 +22,20 @@ SEVEN = 7
 SLOTS = SEVEN ** 3                       # 343 octonions -> 2744-dim hypervector
 BASE = ("https://raw.githubusercontent.com/LasseRegin/"
         "medical-question-answer-data/master/")
-FILES = ["icliniqQAs.json", "questionDoctorQAs.json"]
+FILES = ["ehealthforumQAs.json", "icliniqQAs.json",
+         "questionDoctorQAs.json", "webmdQAs.json"]
 TOK = re.compile(r"[a-z]+")
+# generic words that otherwise let boilerplate phrasing ("is it ok to ...",
+# "what should i do ...") hijack matches away from the real content word
+STOP = set("a an and the is it its to of in on for i my me you your he she his her "
+           "do does did doing have has had having be been being am are was were will "
+           "would should could can may might must what when where who whom how why "
+           "this that these those there here ok okay if then so as at by with from "
+           "or but not no yes get got getting just about into out up down over me "
+           "we us our they them their he's i'm i've it's".split())
 
 def tokenize(s):
-    return TOK.findall(s.lower())
+    return [w for w in TOK.findall(s.lower()) if w not in STOP and len(w) > 1]
 
 def load_qa():
     qa, seen = [], set()
