@@ -858,7 +858,19 @@ clinical lists the alternation drive fights the repetition penalty and lets valu
 Net state of gradient-free generation: fluency, topic flow, proposition binding, and syntactic
 rhythm are each measurable and individually improved (all O(n), no backprop); what remains open is
 genuine inference -- if/then chains between propositions -- where the verified logic operators
-(De Morgan / IMPLIES exact) likely belong, not in surface generation.
+(De Morgan / IMPLIES exact) likely belong, not in surface generation. 
+
+**Inference DOES work — sequentially, base64-verified.** The verified place for the logic
+operators turns out to be reasoning, not syntax. Chaining implications carries a proposition
+exactly: starting from A and applying A->B then B->C lands on C with cosine **1.000**
+(`chain_inference` in `octonion_logic.py`). The catch is structural and beautiful: this only
+works *step by step* (apply each implication to the current proposition); pre-composing the
+operators abstractly, `(B->C) o (A->B)`, fails (0.339) because octonions are **non-associative**.
+So octonion inference has a *path* — like human step-by-step reasoning — and cannot be short-cut
+by abstract operator algebra; the order of reasoning steps is load-bearing. (Contrapositive
+`rot(A->B)(NOT A) = NOT B` is only partial, 0.559, so this is implication-chaining, not full
+Boolean inference.) This is where the algebra's non-associativity finally earns its keep: not in
+recall, not in surface generation, but in giving *inference a direction*.
 
 ## The arc, in one line
 

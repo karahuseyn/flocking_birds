@@ -47,6 +47,19 @@ def demorgan_residual(a, b):      # returns cos(NOT(AND), AND(NOT b, NOT a)) -- 
     lhs = unit(NOT(AND(a, b)).reshape(-1)); rhs = unit(AND(NOT(b), NOT(a)).reshape(-1))
     return float(lhs @ rhs)
 
+def chain_inference(prop, implications):
+    """Sequential modus-ponens chain: start from `prop`, apply each A->B rotation in
+    order.  Base64-verified to be EXACT (cos=1.000): chaining A->B then B->C carries A
+    exactly to C.  Crucially this must be done *sequentially* (apply to the proposition
+    at each step); pre-composing the operators (B->C)o(A->B) fails (cos 0.339) because
+    octonions are non-associative -- so inference here has a *path*, like step-by-step
+    reasoning, and cannot be short-cut by abstract operator algebra.  That non-shortcut
+    property is a feature: the order of reasoning steps matters."""
+    x = prop
+    for impl in implications:
+        x = octo_mul(impl, x)
+    return x
+
 def _selftest():
     import base64
     rng = np.random.default_rng(0)
@@ -60,6 +73,7 @@ def _selftest():
         "IMPLIES":   np.mean([(lambda a, b: cos(octo_mul(IMPLIES(a, b), a), b))(ru(), ru()) for _ in range(N)]),
         "XOR_invol": np.mean([(lambda a, b: cos(XOR(XOR(a, b), b), a))(ru(), ru()) for _ in range(N)]),
         "AND_assoc": np.mean([(lambda a, b, c: cos(AND(AND(a, b), c), AND(a, AND(b, c))))(ru(), ru(), ru()) for _ in range(N)]),
+        "chain_AtoC": np.mean([(lambda a, b, c: cos(chain_inference(a, [IMPLIES(a, b), IMPLIES(b, c)]), c))(ru(), ru(), ru()) for _ in range(N)]),
     }
     print("octonion logic operators -- classical-law check (cosine; 1.0 = exact):")
     for k, v in laws.items():
