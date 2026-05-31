@@ -196,22 +196,31 @@ class OctonionAnswerer:
         return [int(c) for c in chosen]
 
     def differential(self, query, k=6):
-        anchors = self._anchors(query)
-        idx, sims = self._pool(query, anchors, pool=300)
+        anchors = self._anchors(query, n=3)
+        # the single most-specific symptom (highest IDF) must appear in every cited
+        # sentence, so a generic qualifier like "painless" can't pull in unrelated
+        # diseases; the other anchors only help ranking.
+        key = max(anchors, key=lambda t: self.enc.idf[self.enc.stoi[t]]) if anchors else None
+        idx, sims = self._pool(query, anchors, pool=400)
         best = {}
         for i, sim in zip(idx, sims):
             f = self.focus[int(i)]
             if not f or len(f) > 55 or len(f) < 3:
                 continue
+            if f.lower().split()[0] in ("are)", "you", "what", "women", "men", "your"):
+                continue
+            if key and key not in self.stoks[int(i)]:        # require the primary symptom
+                continue
             if f not in best or sim > best[f][0]:
                 best[f] = (int(sim), self.sents[int(i)])
         ranked = sorted(best.items(), key=lambda kv: -kv[1][0])[:k]
-        out = [f"*(symptoms read as: {', '.join(anchors)})*",
-               "Conditions that can present with these symptoms "
+        focus = key or (anchors[0] if anchors else "?")
+        out = [f"*(anchored on symptom: {focus})*",
+               "Conditions that can present with this symptom "
                "(ranked by match; not medical advice — see a clinician):"]
         for n, (dis, (sc, ev)) in enumerate(ranked, 1):
             out.append(f"{n}. **{dis}** — {ev}")
-        return "\n".join(out)
+        return "\n".join(out) if ranked else f"No confident match for symptom '{focus}'."
 
     def aspect_answer(self, query):
         anchors = self._anchors(query)
