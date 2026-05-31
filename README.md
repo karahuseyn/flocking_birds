@@ -669,6 +669,38 @@ octonion/Fano structure is load-bearing for *representing* a Fano-specific trans
 (`octonion_transport.py`: 0.949 vs 0.628) and for bind/unbind recall, but composing learned
 rotations only needs the group — a precise boundary on where the algebra earns its keep.
 
+## Toward fluent gradient-free generation: semantic coordinates, not random codes
+
+The rest of this repo leaned on *random* HDC codes — great for recall, but they have no
+semantic geometry, so they can never produce fluent, meaningful text. `octonion_semantic.py`
+attacks that root cause with three gradient-free ingredients (no backprop):
+
+1. **Meaning** — Levy-Goldberg (2014) proved word2vec is an implicit factorisation of the
+   shifted-PMI matrix, so genuine semantic embeddings need no gradients: co-occurrence →
+   shifted PPMI → truncated SVD. These have real geometry — `king` → *Edward, Warwick,
+   Henry*; `death` → *banished, exile, Tybalt's* — which random codes never had.
+2. **Fluency** — a trigram transition table (counts) is the grammatical backbone.
+3. **Smoothness** — a context vector flows on the unit sphere
+   (`c ← 0.85c + 0.15·emb[next]`), re-ranking the n-gram's candidates by semantic alignment
+   with the flowing context: a continuous trajectory in meaning space.
+
+Generation, base64-verified (prompt ||| continuation):
+
+```
+the king   ||| the king of my son should be the great king ... which warwick says is
+               right 'tis the lord hastings who attended him in
+what news  ||| what news what hast thou forgot her ariel no prospero thou hadst thou not...
+```
+
+This is markedly more fluent and prompt-faithful than the char-level LM (which produced
+"the of her petruchio she be obey'd") — long, mostly grammatical, on-topic spans (king →
+Warwick/Hastings; "what news" → Tempest's Ariel/Prospero). **Honest scope:** not GPT-level —
+long-range coherence across sentences is still absent, and the fluency backbone is an n-gram,
+not the octonion algebra. But it is the first result here that combines *real semantic
+geometry* with a *flowing context*, and it names the next root step precisely: replace the
+n-gram backbone with the bind/unbind induction memory so the octonion structure carries the
+context, not a Markov table.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at

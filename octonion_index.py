@@ -48,6 +48,9 @@ GROUPS = [
         ("octonion_analogy",   "a:b::c:d on word analogies; +6-10 pts on morphology"),
         ("octonion_compose",   "chaining transports -> zero-shot multi-step reasoning"),
     ]),
+    ("Toward fluent gradient-free generation (root attempt)", [
+        ("octonion_semantic",  "PMI-SVD meaning + n-gram fluency + manifold flow; prompt-faithful, no backprop"),
+    ]),
 ]
 
 def print_map():
