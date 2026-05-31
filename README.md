@@ -348,3 +348,35 @@ transformer's quadratic wall, removed, with the octonion structure intact.
 Both add real capability with zero gradient steps — depth and gating fall out of the
 octonion algebra itself (non-commutativity for order, isometry for stable depth),
 keeping the whole stack octonion-centric and O(n).
+
+`octonion_seq.py` (step 6) wires it all into one causal model and runs it on **real
+text** (tinyShakespeare): a context layer (last *m* chars bound into roles and bundled
+with a recency gate), an online per-block induction memory, and nearest-neighbour
+readout. We test the transformer-distinctive ability — **in-context learning** — the
+honest way (Olsson's induction test): feed a real passage, then repeat it, and see what
+the model predicts on the repeat.
+
+```
+octonion in-context memory,  first pass : 11.7%   (nothing to recall yet)
+octonion in-context memory,  on repeat  : 56.3%   (recalls the passage)
+global bigram baseline,      on repeat  : 27.1%   (knows only corpus statistics)
+```
+
+The 12% → 56% jump when the context repeats *is* in-context learning, gradient-free,
+on real text — and of the characters the bigram gets wrong, the octonion memory recalls
+**48% correctly from the prompt itself**, information no n-gram has. Honest limit:
+absolute fidelity is moderate (per-character copying is noisy) because the projections
+are fixed/random and the O(n) memory has finite capacity; sharper copying would want
+learned projections or O(n²) kNN recall. But the *mechanism* — attention-style in-context
+recall, depth, gating, all gradient-free, O(n), and octonion to the core — runs end to
+end on real prompts.
+
+## The arc, in one line
+
+Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
+~71% and where the binding is idle) to the core of the transformer mechanism — content-
+addressable in-context recall with depth and gating — **matching softmax attention's
+accuracy at O(n) instead of O(n²), 33× faster with constant memory, and without a single
+gradient step**. What it is not yet: a trained, fluent language model (that needs
+learning). What it is: evidence that the attention *mechanism* can run on the octonion
+algebra, cheaply.
