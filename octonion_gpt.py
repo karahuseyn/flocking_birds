@@ -64,8 +64,14 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
     ids = ids.tolist()
     D = 8 * K
     if verbose: print(f"  PPMI built ({time.time()-t0:.0f}s, nnz={PPMI.nnz:,}), truncated SVD (top {D})...")
-    U, S, _ = svds(PPMI, k=D)
-    order = np.argsort(S)[::-1]; U = U[:, order]; S = S[order]
+    if W <= D + 1:                                 # tiny vocab: dense SVD, take top D
+        Ud, Sd, _ = np.linalg.svd(PPMI.toarray(), full_matrices=False)
+        U, S = Ud[:, :D], Sd[:D]
+    else:
+        U, S, _ = svds(PPMI, k=min(D, W - 1))
+        order = np.argsort(S)[::-1]; U = U[:, order]; S = S[order]
+    if U.shape[1] < D:                            # always pad to exactly D dims
+        U = np.pad(U, ((0, 0), (0, D - U.shape[1]))); S = np.pad(S, (0, D - len(S)))
     emb = unit(U * np.sqrt(S))
     tri = defaultdict(Counter); bi = defaultdict(Counter)
     for t in range(len(ids) - 1):

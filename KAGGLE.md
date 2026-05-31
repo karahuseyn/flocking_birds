@@ -65,3 +65,23 @@ corpus-styled prose at ~thousands of tokens/sec on one CPU. It is **not** GPT-le
 fluency and topic flow are strong, but cross-sentence logical structure and long-range
 argument are still open (see the repo README's end-to-end section). Scale improves fluency
 and coverage; it does not by itself add reasoning.
+
+
+## Can it do arithmetic? (a "crazy question", honestly answered)
+
+No — and the reason is fundamental. The model is statistical *association*, not symbolic
+*execution*. Base64-verified on a synthetic "A plus B equals C" corpus with all sums
+involving 7 held out:
+
+- **seen operand pairs**: 6/6 correct ("three plus five equals **eight**") — pure retrieval.
+- **unseen pairs (involve 7)**: 0/5 — it cannot compute a sum it never saw.
+
+Worse, the plain trigram backbone gets even *seen* sums wrong (0/6): an n-gram sees only the
+last two tokens, so by "equals" it has already forgotten the first operand `a`. Arithmetic
+needs to bind **three** symbols at once (a, b, result); an n-gram window structurally can't.
+Only an explicit operand-pair table recovers the memorised answers.
+
+So: the model is a perfect **lookup table** (memorised facts, definitions, a times-table it
+was shown) but performs **no procedure**. Computation requires step-by-step state
+transformation, which this gradient-free associative architecture does not have. A code or
+math corpus will reproduce *patterns and idioms* it has seen, not *execute* logic.
