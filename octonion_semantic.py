@@ -87,19 +87,37 @@ def generate(M, seed, n=28, temp=0.5, sem_weight=1.2, flow=0.15, rng_seed=1):
         cvec = (1 - flow) * cvec + flow * emb[nxt]         # smooth flow on the manifold
     return " ".join(vocab[i] for i in out)
 
+CORPORA = {
+    "shakespeare": ("corpus_shakespeare.txt", 4000, 80, None,
+                    ["the king", "my love is", "what news"], ["king", "love", "death"]),
+    "biomed":      ("corpus_biomed.txt", 8000, 120, 30_000_000,
+                    ["patients with", "the aim of this study", "we found that"],
+                    ["patients", "treatment", "cancer"]),
+    "science":     ("corpus_science.txt", 8000, 120, 25_000_000,
+                    ["the results show", "patients with", "we propose a"],
+                    ["patients", "algorithm", "protein"]),
+}
+
 def main():
     import base64
-    path = sys.argv[1] if len(sys.argv) > 1 else "corpus_shakespeare.txt"
-    M = build(open(path, encoding="utf-8").read())
-    print(f"built gradient-free semantic model: {M['W']} words, PMI-SVD + trigram + flow\n")
+    which = sys.argv[1] if len(sys.argv) > 1 else "shakespeare"
+    if which not in CORPORA:                                  # treat arg as a file path
+        path, vs, dim, cap, prompts, probes = sys.argv[1], 6000, 100, 30_000_000, \
+            ["the", "we found"], ["the"]
+    else:
+        path, vs, dim, cap, prompts, probes = CORPORA[which]
+    text = open(path, encoding="utf-8").read(cap) if cap else open(path, encoding="utf-8").read()
+    M = build(text, vocab_size=vs, dim=dim)
+    print(f"built gradient-free semantic model on '{which}': {M['W']} words, "
+          f"PMI-SVD(dim {dim}) + trigram + manifold flow\n")
     print("semantic neighbours (real geometry, not random codes):")
-    for w in ["king", "love", "death"]:
-        print(f"  {w:6s}-> {', '.join(neighbors(M, w))}")
+    for w in probes:
+        print(f"  {w:10s}-> {', '.join(neighbors(M, w))}")
     print("\ngeneration (prompt ||| continuation):")
     outs = []
-    for s in ["the king", "my love is", "what news"]:
-        g = generate(M, s); outs.append(g)
-        print(f"  {g}")
+    for s in prompts:
+        g = generate(M, s, n=30, temp=0.45 if which != "shakespeare" else 0.5)
+        outs.append(g); print(f"  {g}")
     print("B64GEN:" + base64.b64encode("\n".join(outs).encode()).decode())
 
 if __name__ == "__main__":
