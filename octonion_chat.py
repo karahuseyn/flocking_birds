@@ -14,6 +14,7 @@ Hypervector follows the number 7 throughout (see octonion_symptom.py):
 Knowledge base: ~6k real patient/doctor medical Q&A pairs.
 """
 import json, os, re, math, sys, urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 from octonion_lm import octo_norm
 
@@ -37,16 +38,42 @@ STOP = set("a an and the is it its to of in on for i my me you your he she his h
 def tokenize(s):
     return [w for w in TOK.findall(s.lower()) if w not in STOP and len(w) > 1]
 
+def _build_medquad(path):
+    """16k authoritative NIH/cancer.gov Q&A, parsed from the MedQuAD repo zip."""
+    import io, zipfile, xml.etree.ElementTree as ET
+    print("fetching MedQuAD (NIH medical Q&A, ~16MB zip)...")
+    d = urllib.request.urlopen(urllib.request.Request(
+        "https://codeload.github.com/abachaa/MedQuAD/zip/refs/heads/master",
+        headers={"User-Agent": "Mozilla/5.0"}), timeout=180).read()
+    z = zipfile.ZipFile(io.BytesIO(d))
+    out = []
+    for n in z.namelist():
+        if not n.endswith(".xml"):
+            continue
+        try:
+            root = ET.fromstring(z.read(n))
+        except ET.ParseError:
+            continue
+        for pair in root.iter("QAPair"):
+            q = (pair.findtext("Question") or "").strip()
+            a = (pair.findtext("Answer") or "").strip()
+            if q and len(a) > 20:
+                out.append({"question": q, "answer": a})
+    json.dump(out, open(path, "w"))
+
 def load_qa():
     qa, seen = [], set()
-    for f in FILES:
+    for f in FILES + ["medquadQAs.json"]:
         path = os.path.join(HERE, f)
         if not os.path.exists(path):
-            print(f"fetching medical Q&A ({f})...")
-            d = urllib.request.urlopen(
-                urllib.request.Request(BASE + f, headers={"User-Agent": "Mozilla/5.0"}),
-                timeout=60).read()
-            open(path, "wb").write(d)
+            if f == "medquadQAs.json":
+                _build_medquad(path)
+            else:
+                print(f"fetching medical Q&A ({f})...")
+                d = urllib.request.urlopen(
+                    urllib.request.Request(BASE + f, headers={"User-Agent": "Mozilla/5.0"}),
+                    timeout=60).read()
+                open(path, "wb").write(d)
         for r in json.load(open(path, encoding="utf-8")):
             q = (r.get("question") or "").strip()
             a = (r.get("answer") or "").strip()
@@ -154,16 +181,75 @@ def _wrap(s, width=88, lead="    "):
         out.append(line)
     return ("\n" + lead).join(out)
 
+PAGE = """<!doctype html><html><head><meta charset=utf-8>
+<title>Octonion medical QA</title><style>
+body{font:16px/1.5 system-ui,sans-serif;max-width:760px;margin:36px auto;padding:0 16px;color:#1b1b1b}
+h1{font-size:20px} .sub{color:#777;font-size:13px;margin-bottom:18px}
+#q{width:100%;font-size:16px;padding:11px;box-sizing:border-box;border:1px solid #ccc;border-radius:8px}
+button{margin-top:9px;padding:9px 18px;font-size:15px;border:0;border-radius:8px;background:#0b6;color:#fff;cursor:pointer}
+.ans{background:#f4f8f6;border-left:4px solid #0b6;padding:13px 15px;border-radius:6px;margin-top:18px;white-space:pre-wrap}
+.match{color:#0a7;font-size:13px;margin-top:4px}
+ol{color:#444;font-size:14px;margin-top:14px} li{margin:3px 0} .pc{color:#999}
+</style></head><body>
+<h1>🩺 Octonion medical QA</h1>
+<div class=sub>rule-of-7 octonion memory · recalls the 7 nearest of __N__ real Q&amp;A · not medical advice</div>
+<input id=q placeholder="describe your question or symptoms..." autofocus>
+<button onclick=ask()>Ask</button>
+<div id=out></div>
+<script>
+const q=document.getElementById('q'),out=document.getElementById('out');
+q.addEventListener('keydown',e=>{if(e.key=='Enter')ask()});
+async function ask(){
+ if(!q.value.trim())return; out.innerHTML='<p class=pc>recalling...</p>';
+ const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({q:q.value})}); const d=await r.json();
+ let h=`<div class=ans>${d.answer}</div><div class=match>recalled at ${d.sim}% from: "${d.matched}"</div>`;
+ h+='<ol>'+d.near.map(x=>`<li>[${x[1]}%] ${x[0]}</li>`).join('')+'</ol>';
+ out.innerHTML=h;
+}
+</script></body></html>"""
+
+def serve(bot, port=8137):
+    page = PAGE.replace("__N__", str(len(bot.qa))).encode()
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def _send(self, code, body, ctype="application/json"):
+            self.send_response(code); self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body))); self.end_headers()
+            self.wfile.write(body)
+        def do_GET(self):
+            self._send(200, page, "text/html; charset=utf-8")
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0))
+            req = json.loads(self.rfile.read(n) or b"{}")
+            ranked = bot.ask(req.get("q", ""), k=SEVEN)
+            mq, ma, ms = ranked[0]
+            self._send(200, json.dumps({
+                "answer": ma, "matched": mq, "sim": round(ms, 1),
+                "near": [[q, round(s, 1)] for q, _, s in ranked]}).encode())
+    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    print(f"serving the octonion medical QA bot at  http://127.0.0.1:{port}/")
+    print("(press Ctrl+C to stop)")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        srv.shutdown()
+
 def main():
+    args = sys.argv[1:]
     qa = load_qa()
     print(f"knowledge base: {len(qa)} medical Q&A  "
           f"(hypervector {SLOTS} octonions = {SLOTS*8} dims)\n")
     bot = OctonionChat().fit(qa)
-    if len(sys.argv) <= 1:
+
+    if args and args[0] == "serve":                      # browser prompt UI
+        serve(bot)
+        return
+    if not args:
         evaluate(bot, qa)
 
-    if len(sys.argv) > 1:                                # one-shot: ask from CLI
-        questions = [" ".join(sys.argv[1:])]
+    if args:                                             # one-shot: ask from CLI
+        questions = [" ".join(args)]
     else:
         questions = [
             "is it ok to exercise when my knee hurts?",

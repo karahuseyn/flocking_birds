@@ -204,14 +204,22 @@ hypervector (`7**3 = 343` octonions) — and recall the **7 nearest** memories:
   clinically coherent — e.g. jaundice symptoms surface all five hepatitis variants
   together.
 
-- **`octonion_chat.py`** — a retrieval QA bot over **~23 000** real medical Q&A pairs
-  (eHealthForum + iCliniq + QuestionDoctor + WebMD). It encodes your question as a
+- **`octonion_chat.py`** — a retrieval QA bot over **~37 700** real medical Q&A pairs
+  (eHealthForum + iCliniq + QuestionDoctor + WebMD, plus **MedQuAD**'s ~16k authoritative
+  NIH/cancer.gov pairs, parsed from the repo zip). It encodes your question as a
   stop-word-filtered, IDF-weighted bundle of word octonions, recalls the seven nearest
   stored questions, and replies with the best stored answer. Where a transformer
   *generates*, this *recalls*. Paraphrase robustness (rephrase a question to ~60% of its
-  words, shuffled, then recall the exact original): **top-1 96.0%, top-7 99.3%** — and it
-  holds at 10× the knowledge base (the bank is only ~8 MB). Run
-  `python3 octonion_chat.py "my child has a fever and sore throat"`.
+  words, shuffled, then recall the exact original): **top-1 85.8%, top-7 97.3%** — the
+  exact-recall number drops from the smaller corpus only because MedQuAD adds many
+  *templated* near-duplicate questions ("What are the symptoms of X?"), which are
+  genuinely ambiguous to tell apart once a word is dropped; the answers it returns are
+  better and more authoritative. Ask it from the CLI
+  (`python3 octonion_chat.py "my child has a fever and sore throat"`) or in the browser
+  (`python3 octonion_chat.py serve` → http://127.0.0.1:8137/).
 
 Both are one gradient-free pass — the knowledge base *is* the model — and both follow
-the rule of 7 end to end.
+the rule of 7 end to end. (Word **bigrams** were tried as a stronger matcher but
+*hurt* — generic bigrams like `test_result` hijack matches and paraphrase recall fell —
+so the bot stays on robust unigram + IDF + stop-word matching; the real matching gain
+came from more and better data.)
