@@ -159,18 +159,22 @@ Science (mixed),   60M contexts, ctx 12 : 72.7%  ( 7.9 GB RAM )   ~16 min build
 Biomed (1 domain), 25M contexts, ctx 12 : 65.8%
 Biomed (1 domain), 70M contexts, ctx 16 : 73.0%  ( 8.2 GB RAM )   ~20 min build
 
-Controlled sweep (40M biomed, lsh-tables 6, only ctx varies):
-  ctx 12 : 70.8%      ctx 16 : 70.8%      ctx 20 : 70.6%
+Controlled sweep — biomed, lsh-tables 6, fixed held-out, one variable changed:
+  context : ctx 12 = 70.8%   ctx 16 = 70.8%   ctx 20 = 70.6%
+  data    :  20M  = 70.9%     45M  = 70.4%     85M  = 71.1%
 ```
 
-Accuracy is driven by **data amount, not context length**. A controlled sweep
-(40M biomed, identical LSH, only `--ctx` changed) shows ctx 12 ≈ 16 ≈ 20 — the
-recency weighting makes the most-recent few characters dominate, so extra context
-positions neither help nor hurt (they only cost build time). The earlier
-25M→70M jump (+7 points) was the *data*, not the longer context. The practical
-recipe is therefore: keep `--ctx` short (12) and spend the RAM/compute budget on
-**more data** and **more LSH tables** (dropping tables 6→5 to fit a bigger bank
-costs ~2 points of recall). A **single-domain** corpus (`--corpus biomed`, PubMed
+**Both levers are flat — the char model saturates around 71%.** Two clean sweeps
+(fixed held-out slice, identical LSH, one variable at a time) show context length
+12→20 makes no difference *and* data 20M→85M makes no difference: accuracy sits at
+~71% throughout. The recency weighting concentrates the signal in the last few
+characters, and a single-domain corpus is "learned" (i.e. its n-gram statistics are
+covered) by ~20M contexts; more of either just costs RAM and build time. Earlier
+cross-run numbers that looked like a data trend (65.8% → 73.0%) were an artefact of
+*different* held-out slices — a good reminder to fix the evaluation set before
+comparing. This ~71% next-char ceiling is the honest limit of the gradient-free
+char model; the octonion memory shines instead on **retrieval** tasks (see below).
+A **single-domain** corpus (`--corpus biomed`, PubMed
 200k clinical-trial abstracts, ~335M chars via `py7zr`) keeps generation firmly
 on-topic — real clinical-trial phrasing like *"odds ratio (90 % CI)"*, *"Mini-Mental
 State Examination"*, *"n = 51 … placebo"* — whereas the mixed science corpus wanders
@@ -180,7 +184,32 @@ the slow re-*encode* on restart, but the LSH index is rebuilt and the multi-GB b
 is re-read, so large-corpus restarts take minutes, not seconds. Pushing past ~90M
 bumps into the RAM ceiling — drop `--lsh-tables` to fit.
 
-Accuracy keeps improving with more data; context length in the 12–20 range is flat
-(the recency weighting already concentrates the signal in the most-recent characters).
 Generated text reproduces the layout of its corpus — Shakespearean speaker labels, or
-scientific-abstract phrasing — despite never running a single gradient step.
+scientific-abstract phrasing — despite never running a single gradient step. It stays
+locally fluent but wanders topically: free-form generation is *not* where a
+gradient-free nearest-neighbour memory is strong.
+
+## Retrieval: where the octonion memory actually shines
+
+The same octonion-hyperdimensional encoding is far stronger at **retrieval / ranking**
+than at free generation. Two self-contained demos build the hypervector as a fractal
+of sevens — octonion (8 = 1 + 7 Fano units) → heptad (7) → super-heptad (49) →
+hypervector (`7**3 = 343` octonions) — and recall the **7 nearest** memories:
+
+- **`octonion_symptom.py`** — symptom → disease ranker over 4 920 cases (132 symptoms,
+  41 diseases). Each symptom is a fixed octonion hypervector; a patient is the bundle of
+  their symptoms; each disease is the bundle of its training patients. Diagnosis ranks
+  the 41 disease prototypes by Hamming similarity. **top-1 = top-3 = top-7 = 100%** on a
+  held-out fifth (the dataset is highly separable), and the top-7 differential is
+  clinically coherent — e.g. jaundice symptoms surface all five hepatitis variants
+  together.
+
+- **`octonion_chat.py`** — a retrieval QA bot over ~2 300 real medical Q&A pairs. It
+  encodes your question as an IDF-weighted bundle of word octonions, recalls the seven
+  nearest stored questions, and replies with the best stored answer. Where a transformer
+  *generates*, this *recalls*. Paraphrase robustness (rephrase a question to ~60% of its
+  words, shuffled, then recall the exact original): **top-1 93.5%, top-7 99.0%**.
+  Run `python3 octonion_chat.py "my child has a fever and sore throat"`.
+
+Both are one gradient-free pass — the knowledge base *is* the model — and both follow
+the rule of 7 end to end.
