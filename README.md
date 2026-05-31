@@ -318,3 +318,33 @@ Octonion time doubles when L doubles (**linear**); softmax time quadruples
 **25 KB for any length**, while softmax's attention matrix grows as L² (537 MB at 8 192).
 At 8 192 tokens that is **~33× faster and ~21 000× less attention memory** — the
 transformer's quadratic wall, removed, with the octonion structure intact.
+
+`octonion_deep.py` (step 5) deepens the mechanism — multiple layers and gating — with
+**no gradients**, leaning on two structural facts about octonions:
+
+- **Depth by composition.** Octonion multiplication is non-commutative, so `a⊗b ≠ b⊗a`
+  — an *ordered* pair maps to a distinct unit octonion. And the norm is multiplicative
+  (`|xy| = |x|·|y|`), so composing unit codes is an **isometry**: the stack stays
+  norm-stable across depth with no normalisation and no training. A 1-layer head keys on
+  the last token; a 2-layer circuit keys on the *composite* of the last two — which
+  resolves context-sensitive recall the 1-layer head can't:
+
+  ```
+  context-sensitive recall   1-layer (key = b)   2-layer (key = a⊗b)
+              16 triples            38.7%               99.0%
+              32 triples            45.0%               99.3%
+  ```
+
+- **Gating by a fixed forgetting rule.** A decayed memory `S = λ·S + bind(k,v)` weights
+  recent bindings more, no learned gate. On a non-stationary stream (a key reassigned to
+  a new value) it keeps the *latest*, where the ungated sum blends old and new:
+
+  ```
+  non-stationary recall   ungated sum   decayed gate (λ=0.95)
+              16 keys         52.7%            99.7%
+              24 keys         49.3%            99.7%
+  ```
+
+Both add real capability with zero gradient steps — depth and gating fall out of the
+octonion algebra itself (non-commutativity for order, isometry for stable depth),
+keeping the whole stack octonion-centric and O(n).
