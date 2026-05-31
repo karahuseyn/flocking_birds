@@ -624,6 +624,29 @@ earlier "80% on comparatives" was almost all baseline (char-similar *big/bigger*
 true contribution shows on adjective→adverb and opposite. The mechanism is the result; a
 semantic embedding would extend the same gradient-free rotation to meaning-based analogies.
 
+## Composing transports: multi-step object->object reasoning
+
+`octonion_compose.py` chains transports. If `a→b` and `b→c` are learned separately, then
+applying one after the other carries `a→c` with **no `a→c` example ever seen** — zero-shot
+compositional generalisation, because rotations compose. Each hop is learned by gradient-free
+matching pursuit; we then chain them. Base64-verified (held-out cosine alignment):
+
+```
+hops   identity   composed (zero-shot)
+  2      0.383         0.780     (direct-trained ref 0.785 — ~lossless)
+  3      0.177         0.756
+  4      0.167         0.612
+  6      0.052         0.470     (still ~9x the no-transport baseline)
+```
+
+Separately-learned transports chain into multi-step reasoning, degrading gracefully as
+residuals compound (2–3 hops are nearly lossless). Honest ablation: the *composition* itself
+is **not** octonion-specific — random antisymmetric generators compose just as well (Fano
+0.756 vs random 0.793 at 3 hops), since closure is a property of the rotation group. The
+octonion/Fano structure is load-bearing for *representing* a Fano-specific transport
+(`octonion_transport.py`: 0.949 vs 0.628) and for bind/unbind recall, but composing learned
+rotations only needs the group — a precise boundary on where the algebra earns its keep.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
