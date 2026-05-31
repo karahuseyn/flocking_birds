@@ -35,28 +35,35 @@ from collections import Counter, defaultdict
 
 REPOS = [("django/django", "django"), ("pallets/flask", "src"), ("psf/requests", "src"),
          ("scikit-learn/scikit-learn", "sklearn"), ("pandas-dev/pandas", "pandas"),
-         ("psf/black", "src")]
+         ("psf/black", "src"), ("fastapi/fastapi", "fastapi"), ("pallets/click", "src"),
+         ("encode/httpx", "httpx"), ("tiangolo/typer", "typer"),
+         ("python-poetry/poetry", "src"), ("scrapy/scrapy", "scrapy"),
+         ("aio-libs/aiohttp", "aiohttp"), ("pydantic/pydantic", "pydantic"),
+         ("sqlalchemy/sqlalchemy", "lib"), ("tornadoweb/tornado", "tornado"),
+         ("celery/celery", "celery"), ("getsentry/sentry-python", "sentry_sdk")]
 SKIP = ("test", "unicodedata", "encodings", "__pycache__", "/data/", "fixtures",
-        "migrations", "locale")
+        "migrations", "locale", "vendored", "_vendor")
 
 def fetch_corpus(path="corpus_code.txt"):
     if os.path.exists(path):
         return open(path, encoding="utf-8").read()
     out = []
     for repo, sub in REPOS:
-        try:
-            d = urllib.request.urlopen(urllib.request.Request(
-                f"https://codeload.github.com/{repo}/zip/refs/heads/main",
-                headers={"User-Agent": "Mozilla/5.0"}), timeout=180).read()
-            z = zipfile.ZipFile(io.BytesIO(d))
-            for n in z.namelist():
-                if n.endswith(".py") and f"/{sub}/" in n and not any(s in n.lower() for s in SKIP):
-                    code = z.read(n).decode("utf-8", "ignore")
-                    if 200 < len(code) < 40000 and (code.count("def ") + code.count("class ")) >= 2:
-                        out.append(code)
-            print(f"  {repo}: collected")
-        except Exception as e:
-            print(f"  {repo}: {str(e)[:50]}")
+        for branch in ("main", "master"):
+            try:
+                d = urllib.request.urlopen(urllib.request.Request(
+                    f"https://codeload.github.com/{repo}/zip/refs/heads/{branch}",
+                    headers={"User-Agent": "Mozilla/5.0"}), timeout=180).read()
+                z = zipfile.ZipFile(io.BytesIO(d))
+                for n in z.namelist():
+                    if n.endswith(".py") and f"/{sub}/" in n and not any(s in n.lower() for s in SKIP):
+                        code = z.read(n).decode("utf-8", "ignore")
+                        if 200 < len(code) < 40000 and (code.count("def ") + code.count("class ")) >= 2:
+                            out.append(code)
+                print(f"  {repo}: collected"); break
+            except Exception:
+                if branch == "master":
+                    print(f"  {repo}: skipped")
     text = "\n\n".join(out)
     open(path, "w", encoding="utf-8").write(text)
     return text
@@ -122,7 +129,7 @@ def generate(M, seed, n=55, temp=0.35, rng_seed=3):
 
 def main():
     import base64
-    print("building gradient-free code model (real .py from 6 libraries)...")
+    print("building gradient-free code model (real .py from ~18 libraries)...")
     text = fetch_corpus()
     M = build(text)
     print(f"  {M['n_tok']:,} code tokens, vocab {len(M['vocab'])}\n")
