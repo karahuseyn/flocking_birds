@@ -5,3 +5,5 @@ corpus_*.txt
 .memcache_*.npz
 __pycache__/
 *.pyc
+# fetched symptom/disease dataset
+symptoms_train.csv
