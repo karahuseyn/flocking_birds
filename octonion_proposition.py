@@ -83,7 +83,7 @@ def build(text, vocab_size=6000, K=12, window=5, shift=5.0):
                 role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K))
 
 def generate(M, seed, n=44, decay=0.8, w_subj=1.5, w_pred=3.5, temp=0.5,
-             rep_pen=2.0, flow=0.15, rng_seed=1):
+             rep_pen=2.0, flow=0.15, alt_w=2.0, rng_seed=1):
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act = M["tri"], M["bi"], M["is_action"]
     RS, RP = M["role_subj"], M["role_pred"]
@@ -92,7 +92,7 @@ def generate(M, seed, n=44, decay=0.8, w_subj=1.5, w_pred=3.5, temp=0.5,
     SK = np.zeros((M["K"], 8))
     for x in out:
         SK = decay * SK + octo_mul(RP if act[x] else RS, embK[x])   # bind role (x) filler
-    cvec = unit(emb[out].mean(0)); recent = {}
+    cvec = unit(emb[out].mean(0)); recent = {}; since_act = 0
     for _ in range(n):
         cnt = tri.get((out[-2], out[-1])) if len(out) >= 2 else None
         if not cnt:
@@ -104,13 +104,17 @@ def generate(M, seed, n=44, decay=0.8, w_subj=1.5, w_pred=3.5, temp=0.5,
             def nrm(x): return (x - x.min()) / (np.ptp(x) + 1e-9) if len(cand) > 1 else x * 0
             ss = nrm(emb[cand] @ es); sp = nrm(emb[cand] @ ep); fl = nrm(emb[cand] @ cvec)
             rep = np.array([recent.get(int(c), 0) for c in cand], float)
-            score = np.log(freq) + fl + w_subj * ss + w_pred * sp - rep_pen * rep
+            # syntactic rhythm: want a verb if none recently, else suppress (subject-verb alternation)
+            want = 1.0 if since_act >= 2 else -0.5
+            altsig = np.array([want if act[c] else 0.0 for c in cand])
+            score = np.log(freq) + fl + w_subj * ss + w_pred * sp + alt_w * altsig - rep_pen * rep
             p = np.exp(score / temp); p /= p.sum()
             nxt = int(rng.choice(cand, p=p))
         else:
             nxt = int(rng.integers(W))
         out.append(nxt)
         recent = {k: v * 0.6 for k, v in recent.items()}; recent[nxt] = recent.get(nxt, 0) + 1
+        since_act = 0 if act[nxt] else since_act + 1
         SK = decay * SK + octo_mul(RP if act[nxt] else RS, embK[nxt])
         cvec = (1 - flow) * cvec + flow * emb[nxt]
     return " ".join(vocab[i] for i in out)
