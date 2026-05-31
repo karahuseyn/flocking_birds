@@ -724,7 +724,20 @@ single-domain corpus, and the manifold flow. **The honest remaining gap is long-
 coherence**: sentences are now readable scientific prose, not word salad, but ideas still don't
 connect across a paragraph ("the group and in the group and in the group"). That gap is what a
 true context mechanism — the octonion bind/unbind memory replacing the trigram — would have to
-close, and is the real open problem.
+close, and is the real open problem. 
+
+**Tested and refuted (base64-verified): semantic/octonion context does NOT improve next-word
+prediction.** Three variants of replacing the trigram with a meaning-based associative memory —
+a single linear-attention matrix (top-1 0.0%), a semantically-partitioned memory (0.5%, the
+"break the crosstalk" idea), and exact kNN recall with no crosstalk at all (15.8%) — all fail
+to beat the plain trigram (16.4%) on held-out next-word accuracy. The diagnosis is structural,
+not a crosstalk artefact: the semantic mean of the last 3 words carries *no more* next-word
+information than the exact match of the last 2, because the next word is determined mostly by
+local syntax, which the trigram already captures optimally. The deeper lesson: **long-range
+coherence is not measurable by next-word accuracy at all** — that metric is local and never
+tests across a paragraph. Chasing it was chasing the wrong objective. The genuinely open
+problem is long-range coherence under a *non-local* metric (topic/entity consistency across a
+generated paragraph), which neither the trigram nor this semantic memory addresses.
 
 ## The arc, in one line
 
