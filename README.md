@@ -794,7 +794,21 @@ gradient-free: long-range structure becomes a *controllable dynamical quantity* 
 of an evolving state on the PMI-SVD manifold), not a fixed constraint. The honest remaining gap
 is *logical* structure — the topic now travels plausibly, but the steps are associative, not
 inferential (no claim→evidence→conclusion); that needs a state that carries propositions, not
-just topic.
+just topic. 
+
+**Tried propositions, honestly refuted (base64-verified).** The next step was to make the state
+carry *what was claimed*, not just *what about*: the SVD space does separate an action axis
+(`increased`→`decreased, reduced`; `received`→`given, administered`), so I split the discourse
+state into a slow entity-state plus an oscillating action-state and scored candidates by both.
+It failed on every axis vs real text (real local-coh/drift/action-oscillation 0.879/0.217/0.127;
+this variant 0.959/0.560/0.085) and the output collapsed to "patients with with patients with
+with". Diagnosis: adding two scalar state-weights over-constrains the next-word distribution and
+crushes diversity — *proposition structure does not emerge from scalar weights*; it needs a real
+binding `subject ⊗ predicate`, which additive scoring cannot represent. The evolving single-state
+generator (drift 0.37, flowing) remains the best generator; this avenue is a dead end as posed.
+The genuine open problem stands: representing a proposition (a bound subject–predicate that the
+next word must be *consistent with*) gradient-free — the place octonion bind would finally be
+load-bearing for generation, not just recall.
 
 ## The arc, in one line
 
