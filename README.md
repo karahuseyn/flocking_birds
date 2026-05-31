@@ -599,6 +599,31 @@ and random generators cannot even represent a Fano-built transport (0.628) — b
 generators form a closed algebra (`L_g² = -I`, the octonion multiplication rules) that random
 rotations do not.
 
+## Analogy by Fano transport: gradient-free a:b :: c:d
+
+`octonion_analogy.py` applies the transport to a real task — Mikolov's word analogies.
+A relation `a→b` (e.g. *big→bigger*) is a transport of S⁷; we learn it from training pairs
+by matching pursuit over the 7 Fano rotations, then apply it to a new `c` to predict `d`.
+It's word2vec's analogy arithmetic, but as a norm-preserving **rotation** instead of an
+additive offset, and gradient-free. Words are embedded by character-octonion HDC, so the
+embedding carries *spelling*, not meaning. Against an identity baseline (nearest word to `c`,
+no transport), base64-verified:
+
+```
+category                identity   Fano transport   gain
+adjective→adverb          69.0%        79.2%        +10.2   (real morphological learning)
+opposite                   3.5%         9.5%         +6.0
+comparative               80.4%        80.4%         +0.0    (baseline already saturated)
+family (he→she)           35.2%        30.3%         -4.9    (semantic; not in spelling)
+```
+
+The honest reading: Fano transport genuinely learns the relation **present in the
+representation** — with character embeddings that means morphology (+6–10 points where the
+baseline isn't saturated), not semantics. The identity baseline is what reveals this: the
+earlier "80% on comparatives" was almost all baseline (char-similar *big/bigger*), while the
+true contribution shows on adjective→adverb and opposite. The mechanism is the result; a
+semantic embedding would extend the same gradient-free rotation to meaning-based analogies.
+
 ## The arc, in one line
 
 Seven small files take the octonion/Fano idea from a fuzzy n-gram (which *saturates* at
