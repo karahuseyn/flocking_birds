@@ -44,15 +44,18 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
     if verbose: print(f"  corpus {len(words):,} words -> {len(ids):,} in-vocab, vocab {W}")
     # SPARSE co-occurrence -> shifted PPMI -> truncated SVD (gradient-free embedding).
     # Sparse lifts the vocab^2 wall: vocab 40k is ~1.3M nonzeros, not 1.6B dense cells.
-    from scipy.sparse import coo_matrix
+    from scipy.sparse import coo_matrix, csr_matrix
     from scipy.sparse.linalg import svds
-    rows, cols, vals = [], [], []
+    # accumulate each offset directly into a CSR (summing duplicates) so the giant
+    # COO index arrays are never all held at once -- this is what keeps a 50M-word
+    # corpus inside RAM (the naive single-COO build OOMs at ~9GB of index arrays).
+    C = csr_matrix((W, W), dtype=np.float32)
     for d in range(1, window + 1):
-        a = ids[:-d]; b = ids[d:]; w = 1.0 / d
-        rows.append(np.concatenate([a, b])); cols.append(np.concatenate([b, a]))
-        vals.append(np.full(2 * len(a), w, dtype=np.float32))
-    C = coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
-                   shape=(W, W)).tocsr()
+        a = ids[:-d]; b = ids[d:]; w = np.float32(1.0 / d)
+        data = np.full(len(a), w, dtype=np.float32)
+        Cd = coo_matrix((data, (a, b)), shape=(W, W)).tocsr()
+        C = C + Cd + Cd.T                         # symmetric; duplicates summed by CSR
+        del Cd, data
     tot = C.sum(); Pa = np.asarray(C.sum(1)).ravel() / tot
     Cx = C.tocoo()
     pmi = np.log(Cx.data / tot / (Pa[Cx.row] * Pa[Cx.col] + 1e-30) + 1e-12) - np.log(shift)
