@@ -69,6 +69,22 @@ def extract_focus(q):
             return q[q.lower().rindex(sep) + len(sep):].strip(" .()")
     return _FOCUS_PREFIX.sub("", q).strip(" .()") or q
 
+def _load_symptom_terms():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "symptoms_train.csv")
+    if not os.path.exists(p):
+        return set()
+    words = set()
+    for h in open(p, encoding="utf-8").readline().strip().split(","):
+        for w in h.lower().replace("_", " ").split():
+            if len(w) > 3:
+                words.add(w)
+    return words
+
+SYMPTOM_TERMS = _load_symptom_terms()
+
+def is_symptom_word(t):
+    return any(s.startswith(t[:5]) or t.startswith(s[:5]) for s in SYMPTOM_TERMS)
+
 def load_medquad():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "medquadQAs.json")
     if not os.path.exists(path):
@@ -133,8 +149,12 @@ class OctonionAnswerer:
     def _anchors(self, query, n=2):
         allkw = set(k for _, kw in ASPECTS for k in kw) | {"disease", "condition", "suspect", "drink"}
         toks = [t for t in tokenize(query) if t not in allkw and t in self.enc.stoi]
-        toks = sorted(set(toks), key=lambda t: -self.enc.idf[self.enc.stoi[t]])
-        return toks[:n]
+        # prefer query words that are actual symptoms (our 132-symptom lexicon), so a
+        # rare-but-irrelevant noun like "tea" can't out-rank the clinical signal "palpitation"
+        sympt = [t for t in toks if is_symptom_word(t)]
+        pool = sympt or toks
+        pool = sorted(set(pool), key=lambda t: -self.enc.idf[self.enc.stoi[t]])
+        return pool[:n]
 
     def _pool(self, query, anchors, pool=200):
         q = self.enc.pack(self.enc.encode(query))
