@@ -433,29 +433,9 @@ treated with drugs. Therapies are available to manage the signs and symptoms of 
 
 For "type 2 diabetes" it surfaces the right drug (*metformin*), risk factors, and that
 symptoms appear slowly — on-topic and authoritative, gradient-free, octonion throughout.
-
-For a **"what disease should I suspect?"** prompt it switches to a *differential*: it
-anchors on the clinical symptom, retrieves matching sentences, and groups the evidence by
-the disease each MedQuAD entry is about, naming ranked candidate conditions:
-
-```
-$ python3 octonion_answer.py "...a very brief, painless, momentary, strong palpitation.
-                              What disease should I suspect?"
-(symptoms read as: palpitation, momentary)
-Conditions that can present with these symptoms (not medical advice):
-1. Paraganglioma   — ...rapid heartbeat (palpitations), headaches, sweating (catecholamines)
-2. Arrhythmia      — palpitations are sensations that your heart is pounding or racing
-3. Pheochromocytoma— ...release of too much adrenaline
-4. Long QT Syndrome— palpitations, sometimes triggered by exertion or stress
-5. Hyperthyroidism — ...palpitations
-```
-
-It anchors on *palpitation* (not the noise words "tea"/"momentary") and names real
-palpitation-causing conditions. Honest limit: it's *extractive* (real sentences retrieved
-and arranged), not generative; it ranks by text match, so it surfaces both common
-(arrhythmia, hyperthyroidism) and rare-but-classic (pheochromocytoma) causes rather than
-triaging them. But it answers a serious prompt at length, and the search / symbolic plan /
-compose machinery is all octonion + LSH, no training.
+Honest limit: it's *extractive* (real sentences retrieved and arranged), not generative,
+and the odd filler sentence slips through; but it answers a serious prompt at length, and
+the search/plan/compose machinery is all octonion + LSH, no training.
 
 ## The arc, in one line
 
