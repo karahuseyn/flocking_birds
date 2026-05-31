@@ -42,30 +42,27 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
     wi = {w: i for i, w in enumerate(vocab)}; W = len(vocab)
     ids = np.array([wi[w] for w in words if w in wi], dtype=np.int64)
     if verbose: print(f"  corpus {len(words):,} words -> {len(ids):,} in-vocab, vocab {W}")
-    # co-occurrence -> shifted PPMI -> SVD  (gradient-free semantic embedding)
-    # vectorised: for each offset d, scatter-add the shifted id pairs at weight 1/d
-    C = np.zeros((W, W), dtype=np.float32)
+    # SPARSE co-occurrence -> shifted PPMI -> truncated SVD (gradient-free embedding).
+    # Sparse lifts the vocab^2 wall: vocab 40k is ~1.3M nonzeros, not 1.6B dense cells.
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.linalg import svds
+    rows, cols, vals = [], [], []
     for d in range(1, window + 1):
         a = ids[:-d]; b = ids[d:]; w = 1.0 / d
-        np.add.at(C, (a, b), w); np.add.at(C, (b, a), w)
+        rows.append(np.concatenate([a, b])); cols.append(np.concatenate([b, a]))
+        vals.append(np.full(2 * len(a), w, dtype=np.float32))
+    C = coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
+                   shape=(W, W)).tocsr()
+    tot = C.sum(); Pa = np.asarray(C.sum(1)).ravel() / tot
+    Cx = C.tocoo()
+    pmi = np.log(Cx.data / tot / (Pa[Cx.row] * Pa[Cx.col] + 1e-30) + 1e-12) - np.log(shift)
+    keep = pmi > 0
+    PPMI = coo_matrix((pmi[keep], (Cx.row[keep], Cx.col[keep])), shape=(W, W)).tocsr()
     ids = ids.tolist()
-    tot = C.sum(); Pa = C.sum(1) / tot
-    with np.errstate(divide="ignore", invalid="ignore"):
-        PMI = np.log((C / tot) / (np.outer(Pa, Pa) + 1e-30) + 1e-12)
-    PPMI = np.maximum(PMI - np.log(shift), 0.0).astype(np.float32)
     D = 8 * K
-    if verbose: print(f"  PPMI built ({time.time()-t0:.0f}s), randomized SVD (top {D}) on {W}x{W}...")
-    # randomized-projection truncated SVD: keeps the TOP D components (correct semantics,
-    # unlike scipy.svds which returned the smallest), and is fast for large vocab.
-    rng = np.random.default_rng(0)
-    Om = rng.standard_normal((W, D + 30)).astype(np.float32)
-    Y = PPMI @ Om
-    for _ in range(2):                            # power iterations sharpen the top subspace
-        Y = PPMI @ (PPMI.T @ Y)
-    Q, _ = np.linalg.qr(Y)
-    B = Q.T @ PPMI
-    Ub, S, _ = np.linalg.svd(B, full_matrices=False)
-    U = (Q @ Ub)[:, :D]; S = S[:D]
+    if verbose: print(f"  PPMI built ({time.time()-t0:.0f}s, nnz={PPMI.nnz:,}), truncated SVD (top {D})...")
+    U, S, _ = svds(PPMI, k=D)
+    order = np.argsort(S)[::-1]; U = U[:, order]; S = S[order]
     emb = unit(U * np.sqrt(S))
     tri = defaultdict(Counter); bi = defaultdict(Counter)
     for t in range(len(ids) - 1):
@@ -120,16 +117,43 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
         SK = decay * SK + octo_mul(RP if act[nxt] else RS, embK[nxt])
     return " ".join(vocab[i] for i in out)
 
+def save(M, path):
+    """Cache the built model (embedding + n-gram tables) so re-runs skip the build."""
+    import pickle
+    np.savez(path + ".npz", emb=M["emb"], is_action=M["is_action"],
+             vocab=np.array(M["vocab"], dtype=object), K=M["K"])
+    with open(path + ".ngrams.pkl", "wb") as f:
+        pickle.dump({"tri": dict(M["tri"]), "bi": dict(M["bi"])}, f, protocol=4)
+
+def load(path):
+    import pickle
+    d = np.load(path + ".npz", allow_pickle=True)
+    vocab = list(d["vocab"]); K = int(d["K"]); emb = d["emb"]
+    with open(path + ".ngrams.pkl", "rb") as f:
+        ng = pickle.load(f)
+    return dict(vocab=vocab, wi={w: i for i, w in enumerate(vocab)}, W=len(vocab),
+                K=K, emb=emb, embK=emb.reshape(len(vocab), K, 8),
+                tri=ng["tri"], bi=ng["bi"], is_action=d["is_action"],
+                role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K))
+
 def main():
-    import base64
+    import base64, os
     which = sys.argv[1] if len(sys.argv) > 1 else "biomed"
     paths = {"biomed": "corpus_biomed.txt", "science": "corpus_science.txt",
              "shakespeare": "corpus_shakespeare.txt"}
-    cap = {"biomed": 60_000_000, "science": 40_000_000, "shakespeare": None}
-    p = paths.get(which, which); c = cap.get(which, 60_000_000)
-    text = open(p, encoding="utf-8").read(c) if c else open(p, encoding="utf-8").read()
-    print(f"building end-to-end gradient-free model on '{which}' (large corpus)...")
-    M = build(text, vocab_size=10000)
+    cap = {"biomed": None, "science": None, "shakespeare": None}   # use the WHOLE corpus
+    vocab_size = int(os.environ.get("OCTO_VOCAB", "40000"))
+    p = paths.get(which, which); c = cap.get(which, None)
+    cache = f".octogpt_{which}_{vocab_size}"
+    if os.path.exists(cache + ".npz"):
+        print(f"loading cached model {cache} ...")
+        M = load(cache)
+    else:
+        text = open(p, encoding="utf-8").read(c) if c else open(p, encoding="utf-8").read()
+        print(f"building end-to-end gradient-free model on '{which}' "
+              f"(whole corpus, vocab {vocab_size})...")
+        M = build(text, vocab_size=vocab_size)
+        save(M, cache); print(f"  cached to {cache}.*")
     prompts = (sys.argv[2:] or
                ["patients with diabetes", "the treatment reduced",
                 "we investigated whether", "in this study we"])

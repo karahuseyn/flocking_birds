@@ -11,3 +11,4 @@ symptoms_train.csv
 *QAs.json
 answerer_cache*.npz
 questions-words.txt
+.octogpt_*
