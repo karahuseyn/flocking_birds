@@ -25,10 +25,10 @@ def unit(v):
 
 # rule patterns: "A causes B", "A leads to B", "A implies B", "if A then B"
 RULE_RE = re.compile(
-    r"\b([a-z]+(?:\s+[a-z]+)*?)\s+(?:causes|leads to|implies|results in|produces)\s+([a-z]+(?:\s+[a-z]+)*?)\s*[.;]", re.I)
+    r"\b([a-z]+(?:\s+[a-z]+)*?)\s+(?:causes?|leads?\s+to|implies|imply|results?\s+in|produces?|leads?)\s+([a-z]+(?:\s+[a-z]+)*?)\s*[.;]", re.I)
 IFTHEN_RE = re.compile(r"\bif\s+([a-z]+(?:\s+[a-z]+)*?)\s+then\s+([a-z]+(?:\s+[a-z]+)*?)\s*[.;]", re.I)
 QUERY_RE = re.compile(
-    r"\b(?:does|can|will)\s+([a-z]+(?:\s+[a-z]+)*?)\s+(?:lead to|cause|imply|produce|result in)\s+([a-z]+(?:\s+[a-z]+)*)", re.I)
+    r"\b(?:does|can|will|is)\s+([a-z]+(?:\s+[a-z]+)*?)\s+(?:leads?\s+to|causes?|implies|imply|produces?|results?\s+in|connected\s+to)\s+([a-z]+(?:\s+[a-z]+)*)", re.I)
 
 class OctonionQA:
     def __init__(self, seed=0):

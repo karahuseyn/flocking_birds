@@ -173,8 +173,8 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
     return " ".join(vocab[i] for i in out)
 
 # ---- logic-guided QA: parse rules, derive transitive answers ----------------
-_RULE = re.compile(r"\b([a-z]+(?:\s+[a-z]+)*?)\s+(?:causes|leads to|implies|results in)\s+([a-z]+(?:\s+[a-z]+)*?)\s*[.;]", re.I)
-_QRY = re.compile(r"\b(?:does|can|will)\s+([a-z]+(?:\s+[a-z]+)*?)\s+(?:lead to|cause|imply)\s+([a-z]+(?:\s+[a-z]+)*)", re.I)
+_RULE = re.compile(r"\b([a-z]+(?:\s+[a-z]+)*?)\s+(?:causes?|leads?\s+to|implies|imply|results?\s+in|produces?)\s+([a-z]+(?:\s+[a-z]+)*?)\s*[.;]", re.I)
+_QRY = re.compile(r"\b(?:does|can|will|is)\s+([a-z]+(?:\s+[a-z]+)*?)\s+(?:leads?\s+to|causes?|implies|imply|produces?|results?\s+in)\s+([a-z]+(?:\s+[a-z]+)*)", re.I)
 
 class QA:
     def __init__(s, seed=0): s.rng = np.random.default_rng(seed); s.f = {}; s.rules = []
