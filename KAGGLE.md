@@ -147,3 +147,21 @@ all the octonion code inlined and only needs numpy + scipy (pre-installed). Step
 
 (If you DO turn on internet in notebook settings, `kaggle_run.py` / the .ipynb also work and
 will clone the repo + stream WikiText-103.)
+
+## Getting BIG data into the standalone (the missing piece)
+
+The "no corpus found" message means no dataset is attached. `kaggle_standalone.py` now reads
+**.txt / .csv / .parquet / .json** (auto-picks the longest text column), so:
+
+1. In the notebook, right panel -> **"+ Add Input"**.
+2. Search and add a text dataset. Known-good ones on Kaggle:
+   - **"wikitext"** (wikitext-103, ~500 MB clean English)
+   - **"bookcorpus"** / **"gutenberg"** (books, general English)
+   - **"arxiv"** abstracts, **"pubmed"** (domain text)
+3. Re-run the cell. It prints the candidate files it found and uses the biggest, e.g.
+   `using: /kaggle/input/wikitext/.../train.parquet (480 MB of text)`, then builds at
+   vocab 40k in a couple of minutes.
+
+Verified locally on a 24 MB book corpus: neighbours sharpen (king -> france, otho, wamba;
+science -> mathematics, logic, astronomy) and generation is fluent Victorian prose. With a
+500 MB+ dataset the embedding and coverage improve further.

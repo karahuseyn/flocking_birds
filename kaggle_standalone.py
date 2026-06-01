@@ -14,21 +14,58 @@ from collections import Counter, defaultdict
 from scipy.sparse import coo_matrix, csr_matrix
 from scipy.sparse.linalg import svds
 
-# ---- find a corpus -----------------------------------------------------------
-CORPUS_PATH = ""                       # <- set to your attached .txt, or leave "" to auto-find
-if not CORPUS_PATH:
-    cands = glob.glob("/kaggle/input/**/*.txt", recursive=True)
-    cands = sorted(cands, key=lambda p: -os.path.getsize(p))   # biggest first
-    CORPUS_PATH = cands[0] if cands else ""
+# ---- find a corpus (txt / csv / parquet / json under /kaggle/input) ----------
+CORPUS_PATH = ""        # optional: hard-set a file; else auto-find the biggest text under /kaggle/input
+MAX_CHARS = 400_000_000 # cap (~70M words); raise toward 1-2 GB on Kaggle's 30 GB RAM
+
+def _read_any(path, cap):
+    """Read text from .txt/.csv/.parquet/.json* -- pick the longest string column."""
+    low = path.lower()
+    if low.endswith(".txt"):
+        return open(path, encoding="utf-8", errors="ignore").read(cap)
+    try:
+        import pandas as pd
+        if low.endswith(".parquet"):
+            df = pd.read_parquet(path)
+        elif low.endswith(".csv"):
+            df = pd.read_csv(path, on_bad_lines="skip", engine="python", nrows=2_000_000)
+        elif low.endswith((".json", ".jsonl")):
+            df = pd.read_json(path, lines=low.endswith(".jsonl"))
+        else:
+            return ""
+        objcols = [c for c in df.columns if df[c].dtype == object]
+        if not objcols:
+            return ""
+        best = max(objcols, key=lambda c: df[c].astype(str).str.len().head(1000).mean())
+        return "\n".join(df[best].dropna().astype(str).tolist())[:cap]
+    except Exception as e:
+        print("  (could not parse %s: %s)" % (path, str(e)[:60]))
+        return ""
+
+TEXT = ""
 if CORPUS_PATH and os.path.exists(CORPUS_PATH):
-    TEXT = open(CORPUS_PATH, encoding="utf-8", errors="ignore").read()
-    print("corpus:", CORPUS_PATH, "(%.0f MB)" % (len(TEXT) / 1e6))
+    TEXT = _read_any(CORPUS_PATH, MAX_CHARS); print("corpus:", CORPUS_PATH)
 else:
+    import glob as _g
+    files = []
+    for e in ("*.txt", "*.parquet", "*.csv", "*.json", "*.jsonl"):
+        files += _g.glob("/kaggle/input/**/" + e, recursive=True)
+    files = sorted(files, key=lambda p: -os.path.getsize(p))
+    print("found %d candidate files under /kaggle/input" % len(files))
+    for f in files[:5]:
+        print("   %6.0f MB  %s" % (os.path.getsize(f)/1e6, f))
+    for f in files:
+        TEXT = _read_any(f, MAX_CHARS)
+        if len(TEXT) > 10000:
+            print("using:", f, "(%.0f MB of text)" % (len(TEXT)/1e6)); break
+if len(TEXT) < 10000:
     TEXT = ("the king sat in his hall and the queen came to him . the people loved the king "
             "and the king loved the people . in the morning the sun rose over the city . "
             "she looked at the river and the river was calm and bright . ") * 400
-    print("no corpus found under /kaggle/input -- using tiny built-in demo "
-          "(attach a text dataset and set CORPUS_PATH for real results)")
+    print("\n*** NO dataset found under /kaggle/input -- running on a tiny demo. ***")
+    print("*** To use BIG data: click '+ Add Input' (right panel), add a text dataset,")
+    print("*** then re-run. Good ones (search these names): 'wikitext', 'bookcorpus',")
+    print("*** 'wikipedia plain text', 'arxiv', 'pubmed'.  Or upload your own .txt. ***\n")
 
 # ---- octonion algebra (the Fano-plane multiplication, vectorised) ------------
 def _qmul(x, y):
