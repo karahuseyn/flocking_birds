@@ -111,3 +111,23 @@ forward passes). Result: trigram repetition 0.3% -> **0.0%** with coherence/drif
 and visibly loop-free clinical prose ("the relative efficacy and safety of olanzapine or
 risperidone for eight weeks ... clinical follow up was months"). Enabled by default
 (`generate(..., veto=True)`).
+
+## Logic-guided reasoning (octonion_infer + octonion_qa)
+
+The notebook also demonstrates **multi-hop logical inference** — the one place the algebra
+does true *derivation*, not recall. An implication `A=>B` is an exact octonion rotation, so
+chaining rules composes losslessly (verified fidelity 1.000 up to 6 hops). `octonion_qa`
+reads one-step rules from a prompt and derives transitive answers never stated:
+
+```
+prompt: "fever causes infection. infection causes inflammation.
+         inflammation causes tissuedamage. tissuedamage causes pain."
+Q: does fever lead to pain?  ->  Yes, via fever -> infection -> inflammation ->
+                                  tissuedamage -> pain (derived in 4 steps)
+Q: does pain lead to fever?  ->  No (wrong direction, no chain)
+Q: does fever lead to coma?  ->  I don't know (unknown concept)
+```
+
+This is the procedural reasoning that arithmetic could NOT do: it works because the IMPLIES
+rotations are exact and the search is classical forward-chaining over them. The associative
+generator narrates; the octonion algebra derives. `python3 octonion_qa.py` runs the demo.
