@@ -178,3 +178,20 @@ Confirmed working end-to-end on Kaggle CPU with the `rohitgr/wikitext` dataset:
   ticonderoga...".
 - honest limit unchanged: strong local fluency and on-topic spans, but cross-sentence logic
   still drifts -- scale sharpens meaning and coverage, it does not add long-range reasoning.
+
+## Flocking-7 generation + vocab 80k (the boids philosophy, back at the core)
+
+A bird stays in the flock by tracking its ~7 nearest neighbours -- not the whole flock, not a
+fixed set, just whichever 7 are nearest right now. Applied to generation: each next word is
+scored against the **last 7 tokens** (the flock) by two boids rules, plus separation = the loop
+veto:
+  - **cohesion**: align to the 7-token centroid (stay on topic, don't leave the flock)
+  - **alignment**: follow the flock's motion direction emb[last]-emb[first] (keep the local flow)
+
+Base64-verified on biomed (vs real text local-coherence 0.894): greedy 0.880 -> **flock-7 0.912**
+(above real), drift 0.43 -> 0.37. Generation holds a clinical sentence together far better:
+"...a pharmacogenetic effect ... patients were randomly assigned to one of three groups ...
+progression free survival ... hazard ratio ci p ... no difference in the control group."
+`generate(..., w_cohesion=2.0, w_align=1.0, flock=7)` -- flocking on by default.
+
+Vocab is now **80k** by default (richer terms; ~9-10 GB peak build, fine on Kaggle's 30 GB).

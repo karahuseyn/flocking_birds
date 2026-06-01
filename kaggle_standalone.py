@@ -128,9 +128,10 @@ def build(text, vocab_size=40000, K=12, window=5, shift=5.0):
     return dict(vocab=vocab, wi=wi, W=W, K=K, emb=emb, embK=emb.reshape(W, K, 8),
                 tri=tri, bi=bi, act=act, RS=_fano_role([1, 2], K), RP=_fano_role([3, 4], K))
 
-# ---- generate (discourse drift + octonion proposition + alternation + veto) --
+# ---- generate: discourse drift + octonion proposition + alternation + veto + FLOCKING-7 --
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
-             w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1):
+             w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0,
+             w_cohesion=2.0, w_align=1.0, flock=7, veto=True, rng_seed=1):
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act, RS, RP = M["tri"], M["bi"], M["act"], M["RS"], M["RP"]
     rng = np.random.default_rng(rng_seed)
@@ -151,8 +152,16 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
             want = 1.0 if since >= 2 else -0.5
             al = np.array([want if act[x] else 0.0 for x in cand])
             rp = np.array([recent.get(int(x), 0) for x in cand], float)
+            # FLOCKING (boids on the last `flock` tokens, like a bird tracking its 7 nearest):
+            #   cohesion = stay near the flock centroid (don't leave the topic)
+            #   alignment = follow the flock's motion direction (keep the local flow)
+            fl = out[-flock:]
+            cen = unit(emb[fl].mean(0))
+            mot = unit(emb[fl[-1]] - emb[fl[0]]) if len(fl) > 1 else cen
+            coh = nz(emb[cand] @ cen); ali = nz(emb[cand] @ mot)
             sc = (np.log(fr) + nz(emb[cand]@cvec) + 1.5*nz(emb[cand]@s)
-                  + w_subj*nz(emb[cand]@es) + w_pred*nz(emb[cand]@ep) + w_alt*al - rep_pen*rp)
+                  + w_subj*nz(emb[cand]@es) + w_pred*nz(emb[cand]@ep) + w_alt*al
+                  + w_cohesion*coh + w_align*ali - rep_pen*rp)
             p = np.exp(sc/temp); p /= p.sum(); nxt = int(rng.choice(cand, p=p))
         else:
             nxt = int(rng.integers(W))
@@ -199,7 +208,7 @@ class QA:
         return "No chain from %s to %s." % (a, b)
 
 # ============================ RUN =============================================
-M = build(TEXT, vocab_size=40000)
+M = build(TEXT, vocab_size=80000)   # 80k: richer vocab; ~9-10 GB peak, fine on Kaggle 30 GB
 print("\n-- semantic neighbours --")
 emb, wi, vocab = M["emb"], M["wi"], M["vocab"]
 for w in ["king", "war", "science", "love", "city"]:
