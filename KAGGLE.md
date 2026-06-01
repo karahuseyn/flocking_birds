@@ -132,3 +132,18 @@ Q: does fever lead to coma?  ->  I don't know (unknown concept)
 This is the procedural reasoning that arithmetic could NOT do: it works because the IMPLIES
 rotations are exact and the search is classical forward-chaining over them. The associative
 generator narrates; the octonion algebra derives. `python3 octonion_qa.py` runs the demo.
+
+## No-internet Kaggle (recommended): kaggle_standalone.py
+
+Kaggle notebooks have **internet OFF by default**, so `git clone` and `datasets` downloads
+fail (`Could not resolve host: github.com`). `kaggle_standalone.py` needs neither -- it has
+all the octonion code inlined and only needs numpy + scipy (pre-installed). Steps:
+
+1. New notebook, Accelerator = None (CPU).
+2. **+ Add Input** -> attach any text dataset (search e.g. "wikitext", or upload a .txt),
+   or skip it to run on a tiny built-in demo corpus.
+3. Paste all of `kaggle_standalone.py` into one cell and run. It auto-finds the biggest
+   .txt under `/kaggle/input`, or set `CORPUS_PATH` explicitly.
+
+(If you DO turn on internet in notebook settings, `kaggle_run.py` / the .ipynb also work and
+will clone the repo + stream WikiText-103.)
