@@ -6,8 +6,9 @@ linear algebra, which is exactly what a free Kaggle CPU notebook gives you.
 
 ## TL;DR
 1. New Kaggle Notebook → **Settings → Accelerator = None (CPU)**, **Persistence = on**.
-2. Upload / open `kaggle_octonion_gpt.ipynb` (in this repo) and Run All.
-   (it clones the `claude/octonionic-compression-tokenizer-nxbMq` branch — that's where the code lives until merged to `main`)
+2. **Easiest:** paste `kaggle_run.py` into ONE code cell and run (pure ASCII, no cell-type
+   issues). OR upload `kaggle_octonion_gpt.ipynb` and Run All.
+   (both clone the `claude/octonionic-compression-tokenizer-nxbMq` branch -- where the code lives until merged to `main`)
 3. It clones the repo, streams WikiText-103, builds the model (minutes), and generates.
 
 ## Why CPU, not GPU
