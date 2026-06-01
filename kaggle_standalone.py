@@ -21,7 +21,7 @@ MAX_CHARS = 400_000_000 # cap (~70M words); raise toward 1-2 GB on Kaggle's 30 G
 def _read_any(path, cap):
     """Read text from .txt/.csv/.parquet/.json* -- pick the longest string column."""
     low = path.lower()
-    if low.endswith(".txt"):
+    if low.endswith((".txt", ".tokens", ".raw")):     # plain text (wikitext uses .tokens)
         return open(path, encoding="utf-8", errors="ignore").read(cap)
     try:
         import pandas as pd
@@ -48,7 +48,7 @@ if CORPUS_PATH and os.path.exists(CORPUS_PATH):
 else:
     import glob as _g
     files = []
-    for e in ("*.txt", "*.parquet", "*.csv", "*.json", "*.jsonl"):
+    for e in ("*.txt", "*.tokens", "*.parquet", "*.csv", "*.json", "*.jsonl", "*.raw"):
         files += _g.glob("/kaggle/input/**/" + e, recursive=True)
     files = sorted(files, key=lambda p: -os.path.getsize(p))
     print("found %d candidate files under /kaggle/input" % len(files))
