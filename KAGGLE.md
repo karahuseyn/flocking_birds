@@ -165,3 +165,16 @@ The "no corpus found" message means no dataset is attached. `kaggle_standalone.p
 Verified locally on a 24 MB book corpus: neighbours sharpen (king -> france, otho, wamba;
 science -> mathematics, logic, astronomy) and generation is fluent Victorian prose. With a
 500 MB+ dataset the embedding and coverage improve further.
+
+## Verified on Kaggle: full WikiText-103 (user run)
+
+Confirmed working end-to-end on Kaggle CPU with the `rohitgr/wikitext` dataset:
+- corpus `wiki.train.raw` ~400 MB used, **60.2M words, vocab 40k**, built in **291 s** (no OOM).
+- semantic neighbours become world-knowledge sharp: `king -> reigned, accession, cnut,
+  kingship, kinsman, aethelred`; `science -> sociology, psychology, anthropology`;
+  `war -> military, hostilities, invasion, boer`.
+- generation is fluent encyclopedic prose, loop-free (TTC-veto): "...during roman britain
+  within the hundred days napoleon appointed ferino as commander of allied troops ... fort
+  ticonderoga...".
+- honest limit unchanged: strong local fluency and on-topic spans, but cross-sentence logic
+  still drifts -- scale sharpens meaning and coverage, it does not add long-range reasoning.
