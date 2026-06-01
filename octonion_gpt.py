@@ -86,7 +86,7 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
                 role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K))
 
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
-             w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, rng_seed=1):
+             w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1):
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act = M["tri"], M["bi"], M["is_action"]
     RS, RP = M["role_subj"], M["role_pred"]
@@ -96,13 +96,20 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
     SK = np.zeros((M["K"], 8))
     for x in out:
         SK = decay * SK + octo_mul(RP if act[x] else RS, embK[x])
-    recent = {}; since_act = 0
+    recent = {}; since_act = 0; seen_bg = set()
     for _ in range(n):
         cnt = tri.get((out[-2], out[-1])) if len(out) >= 2 else None
         if not cnt:
             cnt = bi.get(out[-1])
         if cnt:
             cand = np.array(list(cnt)); freq = np.array([cnt[c] for c in cand], float)
+            # TTC-as-veto: drop candidates that would recreate an already-emitted bigram
+            # (a loop), keeping stochastic diversity instead of maximizing a score (which
+            # degenerates into repetition). Light: O(candidates), no extra forward passes.
+            if veto and len(out) >= 1 and len(cand) > 1:
+                keep = np.array([(out[-1], int(c)) not in seen_bg for c in cand])
+                if keep.any():
+                    cand, freq = cand[keep], freq[keep]
             def nrm(x): return (x - x.min()) / (np.ptp(x) + 1e-9) if len(cand) > 1 else x * 0
             flo = nrm(emb[cand] @ cvec)                       # local smoothness
             dis = nrm(emb[cand] @ s)                          # evolving topic
@@ -118,6 +125,8 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
             nxt = int(rng.choice(cand, p=p))
         else:
             nxt = int(rng.integers(W))
+        if out:
+            seen_bg.add((out[-1], nxt))
         out.append(nxt)
         recent = {k: v * 0.6 for k, v in recent.items()}; recent[nxt] = recent.get(nxt, 0) + 1
         since_act = 0 if act[nxt] else since_act + 1

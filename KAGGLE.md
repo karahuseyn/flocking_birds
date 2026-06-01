@@ -95,3 +95,19 @@ indentation as tokens) + a 4-gram backbone produces genuinely Python-shaped code
 idiom/signature **retrieval**, not execution -- syntactically plausible, not guaranteed to run
 (consistent with the arithmetic result: it recalls patterns, it does not run procedures).
 Run `python3 octonion_code.py "def get"` (downloads ~10MB of real .py from 6 libraries).
+
+## A test-time-compute alternative: TTC-as-veto
+
+Classic test-time compute maximizes a score (best-of-N, beam search). For a gradient-free
+n-gram that **degenerates into repetition** -- maximizing any fixed score (coherence,
+optionality) loops on the single highest-scoring pattern. Base64-verified on biomed:
+coherence-max -> trigram repetition rises and topic freezes; optionality-max -> 55%
+repetition ("the mean sd and the mean sd and ...").
+
+The fix is to spend TTC on **rejection, not maximization**: keep stochastic sampling for
+diversity, but use a one-step lookahead to *veto* candidates that would recreate an
+already-emitted bigram (a loop), then sample from the rest. Light (O(candidates), no extra
+forward passes). Result: trigram repetition 0.3% -> **0.0%** with coherence/drift unchanged,
+and visibly loop-free clinical prose ("the relative efficacy and safety of olanzapine or
+risperidone for eight weeks ... clinical follow up was months"). Enabled by default
+(`generate(..., veto=True)`).
