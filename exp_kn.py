@@ -46,7 +46,8 @@ class KN:
             D2 = 2 - 3 * Y * (n3 / n2) if n2 else 0.0
             D3 = 3 - 4 * Y * (n4 / n3) if n3 else 0.0
             self.D[k] = (max(D1, 0.0), max(D2, 0.0), max(D3, 0.0))
-        self.Vc = sum(len(c) for c in self.cnt[1].values()) or 1  # total bigram types (KN base)
+        self.uni_ctr = self.cnt[1].get((), Counter())          # w -> continuation count
+        self.uni_tot = sum(self.uni_ctr.values()) or 1         # total distinct bigram types
         return self
 
     def _disc(self, k, c):
@@ -72,9 +73,8 @@ class KN:
         return self._prob(len(ctx) + 1, ctx, w)
 
     def _prob(self, k, ctx, w):
-        if k == 1:                                   # KN unigram = continuation prob
-            cont = sum(1 for c in self.cnt[1].values() if w in c)  # contexts preceding w
-            return cont / self.Vc if self.Vc else 1e-10
+        if k == 1:                                   # KN unigram = continuation prob (O(1))
+            return self.uni_ctr.get(w, 0) / self.uni_tot or 1e-10
         denom, gamma = self._denom_gamma(k, ctx)
         lower = self._prob(k - 1, ctx[1:], w)
         if denom == 0:
@@ -82,45 +82,33 @@ class KN:
         c = self.cnt[k][ctx].get(w, 0)
         return max(c - self._disc(k, c), 0.0) / denom + gamma * lower
 
-class StupidBackoff:
-    """Baseline ~ current backbone: trigram counts, backoff factor 0.4 per level."""
-    def __init__(self, order=3, alpha=0.4):
-        self.N = order; self.a = alpha
+class AddK:
+    """Baseline ~ a naive smoothed trigram: hierarchical add-k, analytically normalized
+    (each level sums to 1 over V), so perplexity is O(tokens) -- no per-vocab loop."""
+    def __init__(self, order=3, k=0.1):
+        self.N = order; self.k = k
         self.cnt = [defaultdict(Counter) for _ in range(order + 1)]
-        self.uni = Counter(); self.tot = 0
+        self.uni = Counter()
     def train(self, ids):
-        self.tot = len(ids)
         for i in range(len(ids)):
             self.uni[ids[i]] += 1
-            for k in range(2, self.N + 1):
-                if i - k + 1 < 0: break
-                self.cnt[k][tuple(ids[i - k + 1:i])][ids[i]] += 1
+            for kk in range(2, self.N + 1):
+                if i - kk + 1 < 0: break
+                self.cnt[kk][tuple(ids[i - kk + 1:i])][ids[i]] += 1
+        self.V = len(self.uni); self.tot = sum(self.uni.values())
         return self
-    def score(self, ctx, w):                          # returns a score (not normalized)
-        ctx = tuple(ctx[-(self.N - 1):])
-        for k in range(len(ctx) + 1, 1, -1):
+    def prob(self, ctx, w):
+        ctx = tuple(ctx[-(self.N - 1):]); kk = self.k; V = self.V
+        for k in range(len(ctx) + 1, 1, -1):          # highest non-empty context wins
             c = self.cnt[k].get(ctx[-(k - 1):])
-            if c and w in c: return (self.a ** (self.N - k)) * c[w] / sum(c.values())
-        return (self.a ** (self.N - 1)) * (self.uni.get(w, 0) + 1) / (self.tot + len(self.uni))
+            if c: return (c.get(w, 0) + kk) / (sum(c.values()) + kk * V)
+        return (self.uni.get(w, 0) + kk) / (self.tot + kk * V)
 
-def perplexity_kn(model, ids):
+def perplexity(model, ids):
     s = 0.0; n = 0
     for i in range(1, len(ids)):
         ctx = ids[max(0, i - (model.N - 1)):i]
         p = model.prob(ctx, ids[i]); s += math.log(max(p, 1e-12)); n += 1
-    return math.exp(-s / n)
-
-def perplexity_sb(model, ids):
-    # stupid backoff is unnormalized; normalize per-context over vocab for a fair ppl
-    s = 0.0; n = 0; V = list(model.uni)
-    cache = {}
-    for i in range(1, len(ids)):
-        ctx = tuple(ids[max(0, i - (model.N - 1)):i])
-        Z = cache.get(ctx)
-        if Z is None:
-            Z = sum(model.score(ctx, w) for w in V); cache[ctx] = Z
-        p = model.score(ctx, ids[i]) / (Z or 1.0)
-        s += math.log(max(p, 1e-12)); n += 1
     return math.exp(-s / n)
 
 if __name__ == "__main__":
@@ -130,13 +118,14 @@ if __name__ == "__main__":
     vocab = set(w for w, _ in Counter(words).most_common(8000))
     ids = [w if w in vocab else "<unk>" for w in words]
     cut = int(len(ids) * 0.9)
-    train, test = ids[:cut], ids[cut:cut + 60000]
+    train, test = ids[:cut], ids[cut:cut + 50000]
     print("train %d test %d  (%.0fs tokenize)" % (len(train), len(test), time.time() - t0))
     lines = []
-    sb = StupidBackoff(order=3).train(train)
-    lines.append("stupid-backoff tri (current)  ppl=%.1f" % perplexity_sb(sb, test))
-    for o in (3, 4, 5):
+    for k in (0.1, 0.01):
+        ab = AddK(order=3, k=k).train(train)
+        lines.append("add-%.2f trigram (naive base)  ppl=%.1f" % (k, perplexity(ab, test)))
+    for o in (2, 3, 4, 5):
         t1 = time.time(); m = KN(order=o).train(train)
-        ppl = perplexity_kn(m, test)
-        lines.append("modified KN order %d          ppl=%.1f  (%.0fs)" % (o, ppl, time.time() - t1))
+        ppl = perplexity(m, test)
+        lines.append("modified KN order %d           ppl=%.1f  (%.0fs)" % (o, ppl, time.time() - t1))
     print("B64KN:" + base64.b64encode("\n".join(lines).encode()).decode())
