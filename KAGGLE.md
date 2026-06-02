@@ -254,3 +254,25 @@ local-coherence 0.887 -> **0.911**, drift 0.382 -> 0.347, anchor 0.802 -> 0.820,
 unchanged. This is now the default backbone in both `octonion_gpt.py` and `kaggle_standalone.py`
 (`build()` precomputes the continuation counts and discounts; `generate()` scores candidates by
 `_kn3_logprob`). Reproduce: `python3 exp_kn.py`.
+## The long fano path: a composition memory (relation consistency, opt-in)
+
+A deeper line (the ARC philosophy): a token is a SET of octonions and the **fano path** between
+tokens -- a long chain of octonion multiplications -- is at once their relation and the
+representation of the whole composition. Because octonions are a *composition algebra*
+(`||ab|| = ||a|| ||b||`), the chain `P_k = P_{k-1} (x) o(token_k)` has two provable properties we
+verified (`exp_octopath.py`): **non-decaying memory** (flipping a token at position p changes the
+final state by exactly `||o_p - o_p'||` regardless of how far back p is -- EMA forgets
+exponentially; the path does not) and **exact recovery** (`o_k = P_{k-1}^{-1} (x) P_k` reconstructs
+every token, length-independent). Being non-commutative, the path is a real composition code:
+`dog bit man` vs `man bit dog` trace different trajectories (`exp_compose_demo.py`: path 0.875 vs
+bag-of-words 0.000), and the distinction survives a long carrier.
+
+Steps built so far:
+- **token = variable-size octonion set** (`exp_token_sets.py`): a token's senses, found
+  gradient-free by clustering its content-word contexts (bank -> {Tellson's-bank, riverbank};
+  light -> {window, moon/rays, slight}; head -> {ship's-head, body, generic}; elinor -> 1 sense).
+- **relation consistency in generation** (`w_rel`, `exp_relpath.py`): score the next token by how
+  well its octonion continues the path's current relation `r = o(cur) (x) o(prev)^-1`, expecting
+  `o(next) ~ r (x) o(cur)`. Verified to cut drift further (0.329 -> 0.284) and raise anchor on top
+  of goal+fano, but weight-sensitive on the full stack, so **off by default**; enable with
+  `generate(..., w_rel=3.0)` for long-form coherence.

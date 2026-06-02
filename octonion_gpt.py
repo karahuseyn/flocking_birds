@@ -146,14 +146,16 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
     # modified Kneser-Ney (order 3) backbone: ~4x lower held-out perplexity than naive
     # smoothing and better generation than raw counts (verified); order >3 adds <2%.
     cont2, cont1, tot1, D2, D3 = _kn_build(tri, bi)
+    octo1 = unit(emb[:, 1:9])                       # one structured octonion per token (skip freq axis)
     return dict(vocab=vocab, wi=wi, W=W, K=K, emb=emb, embK=emb.reshape(W, K, 8),
                 tri=tri, bi=bi, is_action=is_action,
                 role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K),
-                role_cycle=role_cycle, cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3)
+                role_cycle=role_cycle, cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3,
+                octo1=octo1)
 
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
              w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1,
-             w_goal=3.0, goal_ema=0.0, w_fano=4.0, flock=7):
+             w_goal=3.0, goal_ema=0.0, w_fano=4.0, flock=7, w_rel=0.0):
     # w_goal: boids 4th rule -- a persistent topic target the generation steers toward
     #   (verified to roughly halve start->end drift). goal_ema=0 keeps it fixed to the
     #   prompt; ~0.02 lets it migrate slowly. w_fano: the cyclic 'fano path' echo layer --
@@ -163,6 +165,7 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act = M["tri"], M["bi"], M["is_action"]
     RS, RP = M["role_subj"], M["role_pred"]; RC = M.get("role_cycle"); K = M["K"]
+    OCT = M.get("octo1")                                  # one structured octonion per token
     rng = np.random.default_rng(rng_seed)
     out = [wi[w] for w in seed.lower().split() if w in wi] or [int(rng.integers(W))]
     s = unit(emb[out].mean(0)); cvec = s.copy()
@@ -204,9 +207,17 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
                 for kk, tok in enumerate(fl): H = H + octo_mul(RC[(base+kk) % 7], embK[tok])
                 pred = unit(octo_mul(_inv(RC[len(out) % 7]), H).reshape(-1))
                 fa = nrm(emb[cand] @ pred)
+            # RELATION CONSISTENCY (#step2): continue the fano path's current relation
+            # r = o(cur) (x) o(prev)^-1 -> expect o(next) ~ r (x) o(cur). Multiplicative,
+            # non-decaying relational momentum on S^7. Verified: drift down, anchor up.
+            rl = 0.0
+            if w_rel and OCT is not None and len(out) >= 2:
+                r = octo_mul(OCT[out[-1]], _inv(OCT[out[-2]]))
+                exp = octo_mul(r, OCT[out[-1]]); exp = exp / (np.linalg.norm(exp) + 1e-12)
+                rl = nrm(OCT[cand] @ exp)
             score = (freq + w_flow * flo + 1.5 * dis
                      + w_subj * ss + w_pred * sp + w_alt * alt
-                     + w_goal * gl + w_fano * fa - rep_pen * rep)
+                     + w_goal * gl + w_fano * fa + w_rel * rl - rep_pen * rep)
             p = np.exp(score / temp); p /= p.sum()
             nxt = int(rng.choice(cand, p=p))
         else:
@@ -242,7 +253,7 @@ def load(path):
                 tri=ng["tri"], bi=ng["bi"], is_action=d["is_action"],
                 role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K),
                 role_cycle=_fano_path_roles(K),
-                cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3)
+                cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3, octo1=unit(emb[:, 1:9]))
 
 def main():
     import base64, os

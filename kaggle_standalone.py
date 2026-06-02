@@ -189,14 +189,15 @@ def build(text, vocab_size=40000, K=12, window=5, shift=5.0):
     RC = _fano_path_roles(K)
     return dict(vocab=vocab, wi=wi, W=W, K=K, emb=emb, embK=emb.reshape(W, K, 8),
                 tri=tri, bi=bi, act=act, RS=_fano_role([1, 2], K), RP=_fano_role([3, 4], K),
-                RC=RC, cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3)
+                RC=RC, cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3,
+                octo1=unit(emb[:, 1:9]))
 
 # ---- generate: discourse drift + octonion proposition + alternation + veto + FLOCKING-7
 #      + boids GOAL anchor (#1) + cyclic Fano-path ECHO layer (#4) --
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
              w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0,
              w_cohesion=2.0, w_align=1.0, flock=7, veto=True, rng_seed=1,
-             w_goal=3.0, goal_ema=0.0, w_fano=4.0):
+             w_goal=3.0, goal_ema=0.0, w_fano=4.0, w_rel=0.0):
     # w_goal: boids 4th rule -- steer toward a persistent topic target (verified to
     #   roughly halve start->end drift). goal_ema=0 keeps it fixed to the prompt;
     #   a small value (~0.02) lets the target migrate slowly.
@@ -204,9 +205,12 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
     #   roles are RUNNING PRODUCTS along the Fano-unit walk e1..e7 (R_k=R_{k-1}*e_k),
     #   read back by exact octonion unbind. Verified to cut drift and raise anchor on
     #   top of w_goal; on by default. Set 0 to disable.
+    # w_rel: relation-consistency along the fano path -- continue the current relation
+    #   r=o(cur)(x)o(prev)^-1, expecting o(next)~r(x)o(cur). Verified to cut drift further
+    #   at ~3.0, but weight-sensitive on the full stack, so OFF by default (opt-in long-form).
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act, RS, RP = M["tri"], M["bi"], M["act"], M["RS"], M["RP"]
-    RC = M.get("RC"); K = M["K"]
+    RC = M.get("RC"); K = M["K"]; OCT = M.get("octo1")
     rng = np.random.default_rng(rng_seed)
     out = [wi[w] for w in seed.lower().split() if w in wi] or [int(rng.integers(W))]
     s = unit(emb[out].mean(0)); cvec = s.copy(); SK = np.zeros((M["K"], 8))
@@ -245,9 +249,15 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
                 for kk, tok in enumerate(fl): H = H + octo_mul(RC[(base+kk) % 7], embK[tok])
                 pred = unit(octo_mul(_inv(RC[len(out) % 7]), H).reshape(-1))
                 fa = nz(emb[cand] @ pred)
+            # relation consistency (#step2): continue the fano path's current relation
+            rl = 0.0
+            if w_rel and OCT is not None and len(out) >= 2:
+                r = octo_mul(OCT[out[-1]], _inv(OCT[out[-2]]))
+                exp = octo_mul(r, OCT[out[-1]]); exp = exp / (np.linalg.norm(exp) + 1e-12)
+                rl = nz(OCT[cand] @ exp)
             sc = (fr + nz(emb[cand]@cvec) + 1.5*nz(emb[cand]@s)
                   + w_subj*nz(emb[cand]@es) + w_pred*nz(emb[cand]@ep) + w_alt*al
-                  + w_cohesion*coh + w_align*ali + w_goal*gl + w_fano*fa - rep_pen*rp)
+                  + w_cohesion*coh + w_align*ali + w_goal*gl + w_fano*fa + w_rel*rl - rep_pen*rp)
             p = np.exp(sc/temp); p /= p.sum(); nxt = int(rng.choice(cand, p=p))
         else:
             nxt = int(rng.integers(W))
