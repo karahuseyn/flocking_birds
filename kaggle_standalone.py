@@ -125,18 +125,32 @@ def build(text, vocab_size=40000, K=12, window=5, shift=5.0):
     for i in range(len(idl)-2): tri[(idl[i], idl[i+1])][idl[i+2]] += 1
     act = np.array([any(vocab[i].endswith(s) for s in VSUF) and len(vocab[i]) > 4 for i in range(W)])
     print("  built in %.0f s" % (time.time()-t0))
+    # RC: 7 cyclic Fano-point roles (e1..e7 tiled across K) -- the Singer cycle of the
+    # Fano plane, algebraic backbone of the period-7 echo layer in generate().
+    RC = [np.tile(np.eye(8)[i], (K, 1)) for i in range(1, 8)]
     return dict(vocab=vocab, wi=wi, W=W, K=K, emb=emb, embK=emb.reshape(W, K, 8),
-                tri=tri, bi=bi, act=act, RS=_fano_role([1, 2], K), RP=_fano_role([3, 4], K))
+                tri=tri, bi=bi, act=act, RS=_fano_role([1, 2], K), RP=_fano_role([3, 4], K),
+                RC=RC)
 
-# ---- generate: discourse drift + octonion proposition + alternation + veto + FLOCKING-7 --
+# ---- generate: discourse drift + octonion proposition + alternation + veto + FLOCKING-7
+#      + boids GOAL anchor (#1) + cyclic Fano-path ECHO layer (#4) --
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
              w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0,
-             w_cohesion=2.0, w_align=1.0, flock=7, veto=True, rng_seed=1):
+             w_cohesion=2.0, w_align=1.0, flock=7, veto=True, rng_seed=1,
+             w_goal=3.0, goal_ema=0.0, w_fano=0.0):
+    # w_goal: boids 4th rule -- steer toward a persistent topic target (verified to
+    #   roughly halve start->end drift). goal_ema=0 keeps it fixed to the prompt;
+    #   a small value (~0.02) lets the target migrate slowly.
+    # w_fano: cyclic-Fano echo layer -- adds a period-7 structural/anaphoric prior via
+    #   exact octonion unbind. Modest + cadence; weight-sensitive, off by default
+    #   (try ~4.0 alongside w_goal for parallel-clause rhythm).
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act, RS, RP = M["tri"], M["bi"], M["act"], M["RS"], M["RP"]
+    RC = M.get("RC"); K = M["K"]
     rng = np.random.default_rng(rng_seed)
     out = [wi[w] for w in seed.lower().split() if w in wi] or [int(rng.integers(W))]
     s = unit(emb[out].mean(0)); cvec = s.copy(); SK = np.zeros((M["K"], 8))
+    goal = unit(emb[out].mean(0))                       # persistent topic target (boids #4)
     for x in out: SK = decay*SK + octo_mul(RP if act[x] else RS, embK[x])
     recent = {}; since = 0; seen = set()
     for _ in range(n):
@@ -159,9 +173,18 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
             cen = unit(emb[fl].mean(0))
             mot = unit(emb[fl[-1]] - emb[fl[0]]) if len(fl) > 1 else cen
             coh = nz(emb[cand] @ cen); ali = nz(emb[cand] @ mot)
+            gl = nz(emb[cand] @ goal) if w_goal else 0.0    # boids #4: migratory urge
+            # cyclic Fano-path ECHO (#4): 7-slot holographic register over the flock;
+            # unbind the NEXT slot's role -> what filled this Fano point one cycle (7) ago.
+            fa = 0.0
+            if w_fano and RC is not None:
+                base = len(out) - len(fl); H = np.zeros((K, 8))
+                for kk, tok in enumerate(fl): H = H + octo_mul(RC[(base+kk) % 7], embK[tok])
+                pred = unit(octo_mul(_inv(RC[len(out) % 7]), H).reshape(-1))
+                fa = nz(emb[cand] @ pred)
             sc = (np.log(fr) + nz(emb[cand]@cvec) + 1.5*nz(emb[cand]@s)
                   + w_subj*nz(emb[cand]@es) + w_pred*nz(emb[cand]@ep) + w_alt*al
-                  + w_cohesion*coh + w_align*ali - rep_pen*rp)
+                  + w_cohesion*coh + w_align*ali + w_goal*gl + w_fano*fa - rep_pen*rp)
             p = np.exp(sc/temp); p /= p.sum(); nxt = int(rng.choice(cand, p=p))
         else:
             nxt = int(rng.integers(W))
@@ -169,6 +192,7 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
         out.append(nxt); recent = {k: v*0.6 for k, v in recent.items()}; recent[nxt] = recent.get(nxt, 0)+1
         since = 0 if act[nxt] else since+1
         cvec = 0.85*cvec + 0.15*emb[nxt]; s = unit((1-drift)*s + drift*emb[nxt])
+        if goal_ema: goal = unit((1-goal_ema)*goal + goal_ema*emb[nxt])   # slow migration
         SK = decay*SK + octo_mul(RP if act[nxt] else RS, embK[nxt])
     return " ".join(vocab[i] for i in out)
 

@@ -195,3 +195,32 @@ progression free survival ... hazard ratio ci p ... no difference in the control
 `generate(..., w_cohesion=2.0, w_align=1.0, flock=7)` -- flocking on by default.
 
 Vocab is now **80k** by default (richer terms; ~9-10 GB peak build, fine on Kaggle's 30 GB).
+
+## Cutting drift: the boids 4th rule + cyclic Fano echo (on by default)
+
+The honest open problem was **drift** -- every memory in the generator (`cvec`, `s`, `SK`,
+flock, n-gram) forgets after ~5-7 tokens, so the prompt's topic washes out within a clause
+and the text random-walks. Two gradient-free, octonion/boids-native fixes, both base64-verified:
+
+- **#1 Goal anchor (boids' 4th rule, the migratory urge).** Beyond the local flock, a real
+  flock also steers toward a global goal. We keep a **persistent topic target** = the prompt's
+  content centroid (non-decaying) and add `+ w_goal * cos(cand, goal)`. Verified to roughly
+  **halve start->end drift** (e.g. octonion_gpt 0.449 -> 0.305, anchor 0.804 -> 0.829, repetition
+  unchanged) while local coherence holds. **On by default** (`w_goal=3.0`); set `goal_ema~0.02`
+  to let the target migrate slowly instead of staying fixed.
+- **#4 Cyclic Fano echo (the algebra's own contribution).** The 7 Fano points = the 7 imaginary
+  octonion units in a Singer cycle (e1->..->e7->e1); token at position `p` takes role
+  `e_{1+(p mod 7)}`, so the last-7 flock fills a **7-slot holographic register**
+  `H = sum R[p mod 7] (x) embK[token]`. Unbinding the next slot's role (exact -- Artin: a
+  two-generator octonion subalgebra is associative) reads back **what filled this Fano point one
+  cycle (7 tokens) ago** -> a period-7 anaphoric/parallel-cadence prior, plus it drives repetition
+  toward zero. Modest and weight-sensitive, so **off by default**; enable with `w_fano~4.0`
+  alongside the goal anchor for parallel-clause rhythm.
+
+What we tried and dropped, honestly: a separate **slow-cycle topic** term (#5) is subsumed by the
+goal anchor (it's the `goal_ema -> 0` limit), and **continuous-key kNN retrieval** (#2) gave no
+clear coherence gain gradient-free -- kNN-LM's power comes from a *trained* context encoder we
+don't have; our best gradient-free key (the octonion state `SK`) didn't beat a bag-of-words mean,
+and the discrete-key limit of kNN is just a higher-order n-gram. Its one real effect was lower
+repetition. The reproducible experiments live in `exp_topic_anchor.py`, `exp_fano_layer.py`,
+`exp_knn.py`. New tuning knobs: `generate(..., w_goal=3.0, goal_ema=0.0, w_fano=0.0)`.

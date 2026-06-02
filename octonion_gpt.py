@@ -81,18 +81,28 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
     is_action = np.array([any(vocab[i].endswith(s) for s in VSUF) and len(vocab[i]) > 4
                           for i in range(W)])
     if verbose: print(f"  model ready in {time.time()-t0:.0f}s")
+    # role_cycle: 7 cyclic Fano-point roles (e1..e7 tiled across K), the Singer cycle of
+    # the Fano plane -- algebraic backbone of the period-7 echo layer in generate().
+    role_cycle = [np.tile(np.eye(8)[i], (K, 1)) for i in range(1, 8)]
     return dict(vocab=vocab, wi=wi, W=W, K=K, emb=emb, embK=emb.reshape(W, K, 8),
                 tri=tri, bi=bi, is_action=is_action,
-                role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K))
+                role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K),
+                role_cycle=role_cycle)
 
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
-             w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1):
+             w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1,
+             w_goal=3.0, goal_ema=0.0, w_fano=0.0, flock=7):
+    # w_goal: boids 4th rule -- a persistent topic target the generation steers toward
+    #   (verified to roughly halve start->end drift). goal_ema=0 keeps it fixed to the
+    #   prompt; ~0.02 lets it migrate slowly. w_fano: cyclic-Fano period-7 echo layer
+    #   via exact octonion unbind (modest + anaphoric cadence; off by default, try ~4.0).
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act = M["tri"], M["bi"], M["is_action"]
-    RS, RP = M["role_subj"], M["role_pred"]
+    RS, RP = M["role_subj"], M["role_pred"]; RC = M.get("role_cycle"); K = M["K"]
     rng = np.random.default_rng(rng_seed)
     out = [wi[w] for w in seed.lower().split() if w in wi] or [int(rng.integers(W))]
     s = unit(emb[out].mean(0)); cvec = s.copy()
+    goal = unit(emb[out].mean(0))                       # persistent topic target (boids #4)
     SK = np.zeros((M["K"], 8))
     for x in out:
         SK = decay * SK + octo_mul(RP if act[x] else RS, embK[x])
@@ -119,8 +129,18 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
             want = 1.0 if since_act >= 2 else -0.5
             alt = np.array([want if act[c] else 0.0 for c in cand])   # syntactic rhythm
             rep = np.array([recent.get(int(c), 0) for c in cand], float)
+            gl = nrm(emb[cand] @ goal) if w_goal else 0.0            # boids #4: migratory urge
+            # cyclic Fano-path ECHO (#4): 7-slot holographic register over the last `flock`
+            # tokens; unbind the next slot's role -> what filled this Fano point one cycle ago.
+            fa = 0.0
+            if w_fano and RC is not None:
+                fl = out[-flock:]; base = len(out) - len(fl); H = np.zeros((K, 8))
+                for kk, tok in enumerate(fl): H = H + octo_mul(RC[(base+kk) % 7], embK[tok])
+                pred = unit(octo_mul(_inv(RC[len(out) % 7]), H).reshape(-1))
+                fa = nrm(emb[cand] @ pred)
             score = (np.log(freq) + w_flow * flo + 1.5 * dis
-                     + w_subj * ss + w_pred * sp + w_alt * alt - rep_pen * rep)
+                     + w_subj * ss + w_pred * sp + w_alt * alt
+                     + w_goal * gl + w_fano * fa - rep_pen * rep)
             p = np.exp(score / temp); p /= p.sum()
             nxt = int(rng.choice(cand, p=p))
         else:
@@ -132,6 +152,7 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
         since_act = 0 if act[nxt] else since_act + 1
         cvec = (1 - 0.15) * cvec + 0.15 * emb[nxt]            # fast local flow
         s = unit((1 - drift) * s + drift * emb[nxt])          # slow discourse drift
+        if goal_ema: goal = unit((1 - goal_ema) * goal + goal_ema * emb[nxt])  # slow migration
         SK = decay * SK + octo_mul(RP if act[nxt] else RS, embK[nxt])
     return " ".join(vocab[i] for i in out)
 
@@ -152,7 +173,8 @@ def load(path):
     return dict(vocab=vocab, wi={w: i for i, w in enumerate(vocab)}, W=len(vocab),
                 K=K, emb=emb, embK=emb.reshape(len(vocab), K, 8),
                 tri=ng["tri"], bi=ng["bi"], is_action=d["is_action"],
-                role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K))
+                role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K),
+                role_cycle=[np.tile(np.eye(8)[i], (K, 1)) for i in range(1, 8)])
 
 def main():
     import base64, os
