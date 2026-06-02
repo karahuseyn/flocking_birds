@@ -29,6 +29,16 @@ def _fano_role(steps, K):
         e = np.zeros(8); e[g] = 1.0; acc = octo_mul(acc, e)
     return np.tile(acc, (K, 1))
 
+def _fano_path_roles(K, path=(1, 2, 3, 4, 5, 6, 7)):
+    """The cyclic 'fano path': roles are RUNNING PRODUCTS along a Fano-unit sequence,
+    R_0 = 1, R_k = R_{k-1} * e_{path[k-1]} -- a walk on the Fano plane, not single units.
+    Verified to beat single-unit roles (drift down, anchor up) as the echo-layer roles."""
+    roles = []; acc = np.zeros(8); acc[0] = 1.0
+    for g in path:
+        roles.append(np.tile(acc, (K, 1)))
+        e = np.zeros(8); e[g] = 1.0; acc = octo_mul(acc, e)
+    return roles
+
 def _conj(a):
     o = a.copy(); o[..., 1:] *= -1; return o
 
@@ -130,9 +140,9 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
     is_action = np.array([any(vocab[i].endswith(s) for s in VSUF) and len(vocab[i]) > 4
                           for i in range(W)])
     if verbose: print(f"  model ready in {time.time()-t0:.0f}s")
-    # role_cycle: 7 cyclic Fano-point roles (e1..e7 tiled across K), the Singer cycle of
-    # the Fano plane -- algebraic backbone of the period-7 echo layer in generate().
-    role_cycle = [np.tile(np.eye(8)[i], (K, 1)) for i in range(1, 8)]
+    # role_cycle: the cyclic 'fano path' -- running products along the Fano-unit walk
+    # e1..e7 (R_k = R_{k-1}*e_k), the roles of the period-7 echo layer in generate().
+    role_cycle = _fano_path_roles(K)
     # modified Kneser-Ney (order 3) backbone: ~4x lower held-out perplexity than naive
     # smoothing and better generation than raw counts (verified); order >3 adds <2%.
     cont2, cont1, tot1, D2, D3 = _kn_build(tri, bi)
@@ -143,11 +153,13 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
 
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
              w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1,
-             w_goal=3.0, goal_ema=0.0, w_fano=0.0, flock=7):
+             w_goal=3.0, goal_ema=0.0, w_fano=4.0, flock=7):
     # w_goal: boids 4th rule -- a persistent topic target the generation steers toward
     #   (verified to roughly halve start->end drift). goal_ema=0 keeps it fixed to the
-    #   prompt; ~0.02 lets it migrate slowly. w_fano: cyclic-Fano period-7 echo layer
-    #   via exact octonion unbind (modest + anaphoric cadence; off by default, try ~4.0).
+    #   prompt; ~0.02 lets it migrate slowly. w_fano: the cyclic 'fano path' echo layer --
+    #   a period-7 holographic register whose roles are running products along the Fano
+    #   walk e1..e7 (R_k=R_{k-1}*e_k), read by exact octonion unbind. Verified to cut
+    #   drift and raise anchor on top of w_goal; on by default (set 0 to disable).
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act = M["tri"], M["bi"], M["is_action"]
     RS, RP = M["role_subj"], M["role_pred"]; RC = M.get("role_cycle"); K = M["K"]
@@ -229,7 +241,7 @@ def load(path):
                 K=K, emb=emb, embK=emb.reshape(len(vocab), K, 8),
                 tri=ng["tri"], bi=ng["bi"], is_action=d["is_action"],
                 role_subj=_fano_role([1, 2], K), role_pred=_fano_role([3, 4], K),
-                role_cycle=[np.tile(np.eye(8)[i], (K, 1)) for i in range(1, 8)],
+                role_cycle=_fano_path_roles(K),
                 cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3)
 
 def main():

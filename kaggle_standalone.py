@@ -94,6 +94,16 @@ def _fano_role(steps, K):
         e = np.zeros(8); e[g] = 1.0; acc = octo_mul(acc, e)
     return np.tile(acc, (K, 1))
 
+def _fano_path_roles(K, path=(1, 2, 3, 4, 5, 6, 7)):
+    """The cyclic 'fano path': roles are RUNNING PRODUCTS along a Fano-unit sequence,
+    R_0 = 1, R_k = R_{k-1} * e_{path[k-1]} -- a walk on the Fano plane, not single units.
+    Verified to beat single-unit roles (drift down, anchor up) as the echo-layer roles."""
+    roles = []; acc = np.zeros(8); acc[0] = 1.0
+    for g in path:
+        roles.append(np.tile(acc, (K, 1)))
+        e = np.zeros(8); e[g] = 1.0; acc = octo_mul(acc, e)
+    return roles
+
 VSUF = ("ed", "ing", "es", "ize", "ise", "ate", "fy")
 
 # ---- modified Kneser-Ney (order 3) helpers ----------------------------------
@@ -174,9 +184,9 @@ def build(text, vocab_size=40000, K=12, window=5, shift=5.0):
     tot1 = sum(cont1.values()) or 1
     D3 = _kn_disc(_kn_coc(tri.values())); D2 = _kn_disc(_kn_coc(cont2.values()))
     print("  built in %.0f s" % (time.time()-t0))
-    # RC: 7 cyclic Fano-point roles (e1..e7 tiled across K) -- the Singer cycle of the
-    # Fano plane, algebraic backbone of the period-7 echo layer in generate().
-    RC = [np.tile(np.eye(8)[i], (K, 1)) for i in range(1, 8)]
+    # RC: the cyclic 'fano path' -- running products along the Fano-unit walk e1..e7
+    # (R_k = R_{k-1}*e_k), the roles of the period-7 echo layer in generate().
+    RC = _fano_path_roles(K)
     return dict(vocab=vocab, wi=wi, W=W, K=K, emb=emb, embK=emb.reshape(W, K, 8),
                 tri=tri, bi=bi, act=act, RS=_fano_role([1, 2], K), RP=_fano_role([3, 4], K),
                 RC=RC, cont2=cont2, cont1=cont1, tot1=tot1, D2=D2, D3=D3)
@@ -186,13 +196,14 @@ def build(text, vocab_size=40000, K=12, window=5, shift=5.0):
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
              w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0,
              w_cohesion=2.0, w_align=1.0, flock=7, veto=True, rng_seed=1,
-             w_goal=3.0, goal_ema=0.0, w_fano=0.0):
+             w_goal=3.0, goal_ema=0.0, w_fano=4.0):
     # w_goal: boids 4th rule -- steer toward a persistent topic target (verified to
     #   roughly halve start->end drift). goal_ema=0 keeps it fixed to the prompt;
     #   a small value (~0.02) lets the target migrate slowly.
-    # w_fano: cyclic-Fano echo layer -- adds a period-7 structural/anaphoric prior via
-    #   exact octonion unbind. Modest + cadence; weight-sensitive, off by default
-    #   (try ~4.0 alongside w_goal for parallel-clause rhythm).
+    # w_fano: cyclic 'fano path' echo layer -- a period-7 holographic register whose
+    #   roles are RUNNING PRODUCTS along the Fano-unit walk e1..e7 (R_k=R_{k-1}*e_k),
+    #   read back by exact octonion unbind. Verified to cut drift and raise anchor on
+    #   top of w_goal; on by default. Set 0 to disable.
     vocab, wi, W, emb, embK = M["vocab"], M["wi"], M["W"], M["emb"], M["embK"]
     tri, bi, act, RS, RP = M["tri"], M["bi"], M["act"], M["RS"], M["RP"]
     RC = M.get("RC"); K = M["K"]

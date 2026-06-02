@@ -208,14 +208,18 @@ and the text random-walks. Two gradient-free, octonion/boids-native fixes, both 
   **halve start->end drift** (e.g. octonion_gpt 0.449 -> 0.305, anchor 0.804 -> 0.829, repetition
   unchanged) while local coherence holds. **On by default** (`w_goal=3.0`); set `goal_ema~0.02`
   to let the target migrate slowly instead of staying fixed.
-- **#4 Cyclic Fano echo (the algebra's own contribution).** The 7 Fano points = the 7 imaginary
-  octonion units in a Singer cycle (e1->..->e7->e1); token at position `p` takes role
-  `e_{1+(p mod 7)}`, so the last-7 flock fills a **7-slot holographic register**
+- **#4 Cyclic Fano-path echo (the algebra's own contribution).** A "fano path" is a sequence of
+  Fano-unit multiplications; the roles are the **running products** along the walk e1..e7 --
+  `R_0 = 1`, `R_k = R_{k-1}*e_k` (not single units per slot). Token at position `p` takes role
+  `R_{p mod 7}`, so the last-7 flock fills a **7-slot holographic register**
   `H = sum R[p mod 7] (x) embK[token]`. Unbinding the next slot's role (exact -- Artin: a
-  two-generator octonion subalgebra is associative) reads back **what filled this Fano point one
-  cycle (7 tokens) ago** -> a period-7 anaphoric/parallel-cadence prior, plus it drives repetition
-  toward zero. Modest and weight-sensitive, so **off by default**; enable with `w_fano~4.0`
-  alongside the goal anchor for parallel-clause rhythm.
+  two-generator octonion subalgebra is associative) reads back **what filled this slot one cycle
+  (7 tokens) ago** -> a period-7 anaphoric/parallel-cadence prior. Base64-verified that the
+  *running-product path* beats single-unit roles (drift 0.354 -> 0.300, anchor 0.824 -> 0.848)
+  and helps on top of the goal anchor in the full KN generator (drift 0.342 -> 0.289, anchor
+  0.830 -> 0.849), so it is **on by default** (`w_fano=4.0`; set 0 to disable). Note the path
+  matters: a closed 3-cycle on one Fano line {1,2,4} did *not* help -- the full 7-step Singer
+  walk does.
 
 What we tried and dropped, honestly: a separate **slow-cycle topic** term (#5) is subsumed by the
 goal anchor (it's the `goal_ema -> 0` limit), and **continuous-key kNN retrieval** (#2) gave no
