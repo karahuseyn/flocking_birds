@@ -33,6 +33,13 @@ class OctonionPRBot:
         EPr = np.array([self._vec(q) for q, _ in self.train])
         EAr = np.array([self._vec(a) for _, a in self.train])
         self.Xtr, self.Ttr, self.EPru = slots(EPr), slots(EAr), unit(EPr)
+        # inverted index over prompt content tokens (idf>1) for entity-weighted lexical match:
+        # sharing a rare entity token (flu, ibuprofen) outweighs sharing a template word (prevent)
+        post = {}
+        for i, (q, _) in enumerate(self.train):
+            for t in set(toks(q, self.wi)):
+                if self.idf[t] > 1.0: post.setdefault(t, []).append(i)
+        self.post = {t: np.array(v) for t, v in post.items()}
         if verbose: print("fit %.0fs  pairs=%d vocab=%d idf=%s" % (time.time()-t0, len(self.train), self.M["W"], use_idf))
         return self
 
@@ -56,14 +63,26 @@ class OctonionPRBot:
             chosen.append(best)
         return sorted(chosen, key=lambda i: -score[i])
 
-    def answer(self, question, k=40, m=3, steps=10, with_match=False,
+    def _match(self, question, k=40, lex=0.6):
+        # hybrid neighbour ranking: dense IDF-emb cosine + lex * IDF-weighted token overlap
+        pe = self._vec(question); dense = self.EPru @ pe
+        qtok = [t for t in set(toks(question, self.wi)) if self.idf[t] > 1.0]
+        if lex > 0 and qtok:
+            L = np.zeros(len(self.train)); tot = 0.0
+            for t in qtok:
+                w = self.idf[t]; tot += w; p = self.post.get(t)
+                if p is not None: L[p] += w
+            dense = dense + lex * (L / (tot + 1e-9))
+        return pe, np.argsort(-dense)[:k]
+
+    def answer(self, question, k=40, m=3, steps=10, with_match=False, lex=0.6,
                w_anchor=0.6, w_central=0.2, w_query=0.2, w_nbr=0.15, tau=0.25):
         # rerank weights: anchor (transported region) + centrality (consensus) + query
         # relevance + source-neighbour relevance; tau hard-drops off-topic sentences (<tau of
         # the max query similarity) to kill cross-topic bleed-through. Defaults = reranked.
         tq = toks(question, self.wi)
         if not tq: return ("i'm not sure i understood that.", None) if with_match else "i'm not sure i understood that."
-        pe = self._vec(question); nn = np.argsort(-(self.EPru @ pe))[:k]            # IDF-weighted match
+        pe, nn = self._match(question, k=k, lex=lex)                               # entity-weighted match
         F = fit_slot_transport(self.Xtr[nn], self.Ttr[nn], steps=steps)            # local transport
         g = unit(apply_slot(F, slots(pe[None]))[0].reshape(96))                    # answer-region anchor
         seen, pool, nbr = set(), [], []                                            # keep each sentence's best source-neighbour sim
