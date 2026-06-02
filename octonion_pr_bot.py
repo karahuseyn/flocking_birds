@@ -14,10 +14,13 @@ from octonion_pr_slot import toks, slots, fit_slot_transport, apply_slot
 from octonion_pr_extract import SOURCES, sents, rouge1
 
 class OctonionPRBot:
-    def fit(self, pairs, vocab_size=10000, use_idf=True, verbose=True):
+    def fit(self, pairs, vocab_size=10000, use_idf=True, emb_corpus=None, verbose=True):
+        # emb_corpus: optional larger text to LEARN EMBEDDINGS on (e.g. QA + biomed) while the
+        # retrieval/transport POOL stays the QA pairs -- richer vectors, sharper matching.
         self.train = list(pairs)
         t0 = time.time()
-        self.M = G.build("\n".join(q + " " + a for q, a in self.train), vocab_size=vocab_size, verbose=False)
+        build_text = emb_corpus if emb_corpus is not None else "\n".join(q + " " + a for q, a in self.train)
+        self.M = G.build(build_text, vocab_size=vocab_size, verbose=False)
         self.wi, self.emb = self.M["wi"], self.M["emb"]
         # IDF: rare/specific terms (leg cramps, dehydration) outweigh common ones (at, night)
         self.idf = np.ones(self.M["W"])
