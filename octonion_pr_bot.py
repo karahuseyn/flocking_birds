@@ -5,27 +5,41 @@
 #   from octonion_pr_bot import OctonionPRBot
 #   bot = OctonionPRBot().fit(pairs); print(bot.answer("i have a headache and fever"))
 #   bot.serve(8000)          # browser UI at http://localhost:8000  (local/Kaggle)
-import json, time, re
+import json, time, math
 import numpy as np
+from collections import Counter
 import octonion_gpt as G
 from exp_fano_layer import unit
-from octonion_pr_slot import toks, meanemb, slots, fit_slot_transport, apply_slot
+from octonion_pr_slot import toks, slots, fit_slot_transport, apply_slot
 from octonion_pr_extract import SOURCES, sents, rouge1
 
 class OctonionPRBot:
-    def fit(self, pairs, vocab_size=10000, verbose=True):
+    def fit(self, pairs, vocab_size=10000, use_idf=True, verbose=True):
         self.train = list(pairs)
         t0 = time.time()
         self.M = G.build("\n".join(q + " " + a for q, a in self.train), vocab_size=vocab_size, verbose=False)
         self.wi, self.emb = self.M["wi"], self.M["emb"]
-        EPr = meanemb([toks(q, self.wi) for q, _ in self.train], self.emb)
-        EAr = meanemb([toks(a, self.wi) for _, a in self.train], self.emb)
+        # IDF: rare/specific terms (leg cramps, dehydration) outweigh common ones (at, night)
+        self.idf = np.ones(self.M["W"])
+        if use_idf:
+            df = Counter()
+            for q, a in self.train:
+                for tk in set(toks(q + " " + a, self.wi)): df[tk] += 1
+            N = len(self.train)
+            for tk, c in df.items(): self.idf[tk] = math.log((N + 1) / (c + 1)) + 1.0
+        EPr = np.array([self._vec(q) for q, _ in self.train])
+        EAr = np.array([self._vec(a) for _, a in self.train])
         self.Xtr, self.Ttr, self.EPru = slots(EPr), slots(EAr), unit(EPr)
-        if verbose: print("fit %.0fs  pairs=%d vocab=%d" % (time.time()-t0, len(self.train), self.M["W"]))
+        if verbose: print("fit %.0fs  pairs=%d vocab=%d idf=%s" % (time.time()-t0, len(self.train), self.M["W"], use_idf))
         return self
 
-    def _semb(self, txt):
-        t = toks(txt, self.wi); return unit(self.emb[t].mean(0)) if t else np.zeros(96)
+    def _vec(self, txt):
+        t = toks(txt, self.wi)
+        if not t: return np.zeros(96)
+        w = self.idf[t][:, None]
+        return unit((self.emb[t] * w).sum(0))
+
+    _semb = _vec
 
     def _mmr(self, cv, score, m=3, lam=0.7):
         chosen = []
@@ -42,9 +56,9 @@ class OctonionPRBot:
     def answer(self, question, k=40, m=3, steps=10, with_match=False):
         tq = toks(question, self.wi)
         if not tq: return ("i'm not sure i understood that.", None) if with_match else "i'm not sure i understood that."
-        pe = unit(self.emb[tq].mean(0)); nn = np.argsort(-(self.EPru @ pe))[:k]
+        pe = self._vec(question); nn = np.argsort(-(self.EPru @ pe))[:k]            # IDF-weighted match
         F = fit_slot_transport(self.Xtr[nn], self.Ttr[nn], steps=steps)            # local transport
-        g = unit(apply_slot(F, slots(self.emb[tq].mean(0)[None]))[0].reshape(96))  # answer-region anchor
+        g = unit(apply_slot(F, slots(pe[None]))[0].reshape(96))                    # answer-region anchor
         pool = list(dict.fromkeys([s for j in nn for s in sents(self.train[int(j)][1])]))[:140]
         if not pool: return ("i don't have information on that yet.", None) if with_match else "i don't have information on that yet."
         cv = np.array([self._semb(s) for s in pool]); cen = cv.mean(0)
