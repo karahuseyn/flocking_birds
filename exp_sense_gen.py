@@ -46,7 +46,7 @@ if __name__ == "__main__":
     print("built %.0fs  sense-sets for %d tokens (%d polysemous)" % (time.time()-t0, len(SOCT), multi))
 
     def disamb(t, c):
-        if t in SOCT: O = SOCT[t]; return O[int(SCTX[t] @ c)] if len(O) > 1 else O[0]
+        if t in SOCT: O = SOCT[t]; return O[int((SCTX[t] @ c).argmax())] if len(O) > 1 else O[0]
         return o1[t]
 
     def gen(seed, n=80, temp=0.5, rng_seed=1, mode="sense", w_rel=3.0, w_goal=3.0):
