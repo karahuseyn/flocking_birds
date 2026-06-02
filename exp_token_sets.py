@@ -43,7 +43,7 @@ def sense_sets(M, ids, target_ids, freq, stop, idf, window=5, max_occ=600, kmax=
             lab, C = kmeans(ctx, k, seed=1)
             sizes = [np.mean(lab == j) for j in range(k)]
             Cn = X.unit(C); sep = max((Cn @ Cn.T)[np.triu_indices(k, 1)])
-            if min(sizes) >= 0.15 and sep < 0.55: best = (k, lab, C)
+            if min(sizes) >= 0.20 and sep < 0.82: best = (k, lab, C)   # real sense pairs sit ~0.66-0.80
         res[w] = best
     return res
 
@@ -62,8 +62,8 @@ if __name__ == "__main__":
     stop = set(i for i, _ in freq.most_common(150))               # function-word stoplist
     idf = {u: np.log(1 + N / c) for u, c in freq.items()}
     print("built %.0fs, %d tokens" % (time.time()-t0, len(ids)))
-    targets = ["bank", "spring", "light", "bear", "rock", "fair", "ground", "court",
-               "table", "head", "fire", "matter", "elizabeth", "hydrogen"]
+    targets = ["bank", "light", "fire", "head", "fair", "table", "court", "spring",   # polysemous
+               "morning", "horses", "therefore", "elinor"]                            # controls (expect 1)
     tids = {wi[w] for w in targets if w in wi}
     R = sense_sets(M, ids, tids, freq, stop, idf)
     def near(v, k=6):
