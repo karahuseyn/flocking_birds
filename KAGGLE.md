@@ -224,3 +224,29 @@ don't have; our best gradient-free key (the octonion state `SK`) didn't beat a b
 and the discrete-key limit of kNN is just a higher-order n-gram. Its one real effect was lower
 repetition. The reproducible experiments live in `exp_topic_anchor.py`, `exp_fano_layer.py`,
 `exp_knn.py`. New tuning knobs: `generate(..., w_goal=3.0, goal_ema=0.0, w_fano=0.0)`.
+
+## Backbone: modified Kneser-Ney (order 3), the right "discrete-key" smoothing
+
+The n-gram backbone was raw trigram counts with a hard bigram fallback. We replaced it with
+**interpolated modified Kneser-Ney** (Chen & Goodman 1998) -- absolute discounting plus
+*continuation* probabilities (a word's likelihood from how many distinct contexts precede it,
+not its raw frequency), interpolated trigram -> bigram -> unigram. Base64-verified on held-out
+`corpus_books`:
+
+| model | held-out perplexity |
+|------|--------------------:|
+| naive add-0.01 trigram | 845.7 |
+| modified KN order 2 | 223.4 |
+| **modified KN order 3** | **201.5** |
+| modified KN order 4 | 198.5 |
+| modified KN order 5 | 198.0 |
+
+Two honest findings: **(1)** KN smoothing beats naive smoothing ~**4x** (846 -> 201); **(2)**
+going past order 3 buys **<2%** -- so the lever is the *smoothing*, not the order, which validates
+the generator's existing trigram. We therefore ship **KN order-3** (not 4/5: not worth the
+memory/time). It also helps *generation*, not just perplexity: with everything else fixed,
+swapping raw counts for KN-3 log-probs and widening candidates to trigram-union-bigram moved
+local-coherence 0.887 -> **0.911**, drift 0.382 -> 0.347, anchor 0.802 -> 0.820, repetition
+unchanged. This is now the default backbone in both `octonion_gpt.py` and `kaggle_standalone.py`
+(`build()` precomputes the continuation counts and discounts; `generate()` scores candidates by
+`_kn3_logprob`). Reproduce: `python3 exp_kn.py`.
