@@ -51,6 +51,25 @@ def to_octonion(centroid):
     o = centroid[1:9].copy()                       # skip dim0 (the frequency axis) -> 8 semantic dims
     return o / (np.linalg.norm(o) + 1e-12)
 
+def merge_senses(lab, C, thr=0.9):
+    """Merge clusters whose OCTONIONs (the downstream representation) are near-identical
+    (cos>thr) -- these are spurious generic-vs-generic splits, not real senses."""
+    k = len(C); O = np.array([to_octonion(C[j]) for j in range(k)])
+    parent = list(range(k))
+    def find(x):
+        while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+    for i in range(k):
+        for j in range(i+1, k):
+            if O[i] @ O[j] > thr: parent[find(j)] = find(i)
+    groups = {}
+    for j in range(k): groups.setdefault(find(j), []).append(j)
+    newlab = lab.copy(); newC = []
+    for gi, (root, members) in enumerate(groups.items()):
+        for m in members: newlab[lab == m] = gi
+        newC.append(C[members].mean(0))
+    return len(groups), newlab, np.array(newC)
+
 if __name__ == "__main__":
     t0 = time.time()
     TEXT = open("corpus_books.txt", encoding="utf-8", errors="ignore").read()
@@ -73,6 +92,7 @@ if __name__ == "__main__":
     for w in targets:
         if w not in wi or R.get(wi[w]) is None: out.append("%-12s (too rare)" % w); continue
         k, lab, C = R[wi[w]]
+        k, lab, C = merge_senses(lab, C)           # collapse spurious generic splits
         out.append("%-12s  SET SIZE = %d" % (w, k))
         for j in range(k):
             oct8 = to_octonion(C[j])
