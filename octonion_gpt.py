@@ -155,7 +155,7 @@ def build(text, vocab_size=10000, K=12, window=5, shift=5.0, verbose=True):
 
 def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
              w_flow=1.0, w_subj=1.5, w_pred=3.5, w_alt=2.0, rep_pen=2.0, veto=True, rng_seed=1,
-             w_goal=3.0, goal_ema=0.0, w_fano=4.0, flock=7, w_rel=0.0):
+             w_goal=3.0, goal_ema=0.0, w_fano=4.0, flock=7, w_rel=0.0, goal_vec=None):
     # w_goal: boids 4th rule -- a persistent topic target the generation steers toward
     #   (verified to roughly halve start->end drift). goal_ema=0 keeps it fixed to the
     #   prompt; ~0.02 lets it migrate slowly. w_fano: the cyclic 'fano path' echo layer --
@@ -169,7 +169,7 @@ def generate(M, seed, n=60, temp=0.5, decay=0.8, drift=0.18,
     rng = np.random.default_rng(rng_seed)
     out = [wi[w] for w in seed.lower().split() if w in wi] or [int(rng.integers(W))]
     s = unit(emb[out].mean(0)); cvec = s.copy()
-    goal = unit(emb[out].mean(0))                       # persistent topic target (boids #4)
+    goal = unit(goal_vec) if goal_vec is not None else unit(emb[out].mean(0))   # topic target (boids #4); may be injected (e.g. a transported answer-region anchor)
     SK = np.zeros((M["K"], 8))
     for x in out:
         SK = decay * SK + octo_mul(RP if act[x] else RS, embK[x])
