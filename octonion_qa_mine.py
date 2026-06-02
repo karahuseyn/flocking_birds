@@ -18,34 +18,46 @@ def ok_subj(x):
     if w[0] in STOP or w[-1] in STOP: return False        # no leading/trailing adjective/pronoun
     return any(len(t) > 4 for t in w)                     # at least one specific-ish term
 
-# DEF runs on ORIGINAL case: subject must be a Capitalised entity (drug/disease/procedure name).
+# DEF / USE run on ORIGINAL case: subject must be a Capitalised entity (drug/disease name).
 DEF = re.compile(r"\b([A-Z][A-Za-z0-9\-]{2,}(?:\s[A-Za-z0-9\-]+){0,3}?) (?:is|are) "
                  r"(?:a |an |the |defined as |characterized by |known as )")
+USE = re.compile(r"\b([A-Z][A-Za-z0-9\-]{2,}(?:\s[A-Za-z0-9\-]+){0,3}?) (?:is|are) used "
+                 r"(?:to treat|for|in the treatment of|to prevent|as)\b")
+# lowercase patterns
 PATS = [
     (re.compile(r"\bsymptoms of ([a-z][a-z\- ]{2,40}?) (?:include|are|may include|consist)"),
      "what are the symptoms of %s ?"),
     (re.compile(r"\b([a-z][a-z\- ]{2,40}?) (?:is|are) caused by"), "what causes %s ?"),
+    (re.compile(r"\b(?:treatment|therapy) (?:of|for) ([a-z][a-z\- ]{2,40}?)[ ,.]"), "how is %s treated ?"),
+    (re.compile(r"\b([a-z][a-z\- ]{2,40}?) (?:is|are|can be) (?:diagnosed|detected) (?:by|with|using|through)"),
+     "how is %s diagnosed ?"),
+    (re.compile(r"\b(?:prevention of|to prevent) ([a-z][a-z\- ]{2,40}?)[ ,.]"), "how is %s prevented ?"),
     (re.compile(r"\brisk factors for ([a-z][a-z\- ]{2,40}?) (?:include|are)"), "what are the risk factors for %s ?"),
 ]
 
-def mine(paths, cap=60000, maxchars=160_000_000):
+def mine(paths, cap=40000, maxchars=400_000_000):
     pairs = []; seen = set()
     for p in paths:
-        txt = open(p, encoding="utf-8", errors="ignore").read(maxchars)
-        for line in txt.split("\n"):
+        read = 0
+        for line in open(p, encoding="utf-8", errors="ignore"):
+            read += len(line)
+            if read > maxchars: break
             s = line.strip()
             if not (40 <= len(s) <= 300): continue
             hit = None
             m = DEF.search(s)
-            if m and ok_subj(m.group(1)): hit = ("what is %s ?" % m.group(1).lower(), m.group(1).lower())
+            if m and ok_subj(m.group(1)): hit = ("what is %s ?" % m.group(1).lower(), s)
             else:
-                low = s.lower()
-                for rx, tmpl in PATS:
-                    mm = rx.search(low)
-                    if mm and ok_subj(mm.group(1).strip(" -")):
-                        sub = mm.group(1).strip(" -"); hit = (tmpl % sub, sub); break
-            if hit and hit[1] not in seen:
-                seen.add(hit[1]); pairs.append((hit[0], s))
+                m = USE.search(s)
+                if m and ok_subj(m.group(1)): hit = ("what is %s used for ?" % m.group(1).lower(), s)
+                else:
+                    low = s.lower()
+                    for rx, tmpl in PATS:
+                        mm = rx.search(low)
+                        if mm and ok_subj(mm.group(1).strip(" -")):
+                            hit = (tmpl % mm.group(1).strip(" -"), s); break
+            if hit and hit[0] not in seen:
+                seen.add(hit[0]); pairs.append(hit)
             if len(pairs) >= cap: return pairs
     return pairs
 
