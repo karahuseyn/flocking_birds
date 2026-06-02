@@ -12,3 +12,5 @@ symptoms_train.csv
 answerer_cache*.npz
 questions-words.txt
 .octogpt_*
+
+mined_big.json
