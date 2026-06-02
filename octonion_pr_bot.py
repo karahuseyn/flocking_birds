@@ -53,16 +53,29 @@ class OctonionPRBot:
             chosen.append(best)
         return sorted(chosen, key=lambda i: -score[i])
 
-    def answer(self, question, k=40, m=3, steps=10, with_match=False):
+    def answer(self, question, k=40, m=3, steps=10, with_match=False,
+               w_anchor=0.6, w_central=0.2, w_query=0.2, w_nbr=0.15, tau=0.25):
+        # rerank weights: anchor (transported region) + centrality (consensus) + query
+        # relevance + source-neighbour relevance; tau hard-drops off-topic sentences (<tau of
+        # the max query similarity) to kill cross-topic bleed-through. Defaults = reranked.
         tq = toks(question, self.wi)
         if not tq: return ("i'm not sure i understood that.", None) if with_match else "i'm not sure i understood that."
         pe = self._vec(question); nn = np.argsort(-(self.EPru @ pe))[:k]            # IDF-weighted match
         F = fit_slot_transport(self.Xtr[nn], self.Ttr[nn], steps=steps)            # local transport
         g = unit(apply_slot(F, slots(pe[None]))[0].reshape(96))                    # answer-region anchor
-        pool = list(dict.fromkeys([s for j in nn for s in sents(self.train[int(j)][1])]))[:140]
+        seen, pool, nbr = set(), [], []                                            # keep each sentence's best source-neighbour sim
+        for j in nn:
+            nbs = float(self.EPru[int(j)] @ pe)
+            for s in sents(self.train[int(j)][1]):
+                if s not in seen: seen.add(s); pool.append(s); nbr.append(nbs)
+        pool, nbr = pool[:160], np.array(nbr[:160])
         if not pool: return ("i don't have information on that yet.", None) if with_match else "i don't have information on that yet."
         cv = np.array([self._semb(s) for s in pool]); cen = cv.mean(0)
-        idx = self._mmr(cv, 0.7 * (cv @ g) + 0.3 * (cv @ cen), m=m)
+        qs = cv @ pe
+        keep = qs >= tau * qs.max()                                                # drop off-topic sentences
+        if keep.sum() >= m: pool = [pool[i] for i in np.where(keep)[0]]; cv = cv[keep]; nbr = nbr[keep]; qs = qs[keep]
+        score = w_anchor * (cv @ g) + w_central * (cv @ cen) + w_query * qs + w_nbr * nbr
+        idx = self._mmr(cv, score, m=m)
         ans = " ".join(pool[i] for i in idx)
         return (ans, self.train[int(nn[0])][0]) if with_match else ans
 
