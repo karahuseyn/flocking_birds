@@ -17,8 +17,9 @@ def kmeans(Xd, k, iters=25, seed=0):
             if m.any(): C[j] = Xd[m].mean(0)
     return lab, C
 
-def sense_sets(M, ids, target_ids, window=4, max_occ=400, kmax=4):
-    """For each target token: cluster its windowed-context vectors into senses (variable count)."""
+def sense_sets(M, ids, target_ids, freq, stop, idf, window=5, max_occ=600, kmax=4):
+    """For each target token: cluster its CONTENT-word, IDF-weighted context vectors into
+    senses (variable count). Function words are dropped; they swamp the raw window mean."""
     emb = M["emb"]; pos = {}
     for i, w in enumerate(ids):
         if w in target_ids: pos.setdefault(w, []).append(i)
@@ -28,23 +29,27 @@ def sense_sets(M, ids, target_ids, window=4, max_occ=400, kmax=4):
         ctx = []
         for i in P:
             lo, hi = max(0, i-window), min(len(ids), i+window+1)
-            nb = [ids[j] for j in range(lo, hi) if j != i]
-            if nb: ctx.append(emb[nb].mean(0))
-        if len(ctx) < 8: res[w] = None; continue
+            v = np.zeros(emb.shape[1]); tot = 0.0
+            for j in range(lo, hi):
+                u = ids[j]
+                if j == i or u in stop: continue
+                v += idf[u] * emb[u]; tot += idf[u]
+            if tot > 0: ctx.append(v / tot)
+        if len(ctx) < 12: res[w] = None; continue
         ctx = X.unit(np.array(ctx))
-        # choose number of senses: grow k while clusters stay well-separated & supported
         best = (1, *kmeans(ctx, 1))
         for k in range(2, kmax+1):
             if len(ctx) < k*15: break
             lab, C = kmeans(ctx, k, seed=1)
             sizes = [np.mean(lab == j) for j in range(k)]
-            Cn = X.unit(C); sep = max((Cn @ Cn.T)[np.triu_indices(k, 1)])  # worst pair similarity
-            if min(sizes) >= 0.15 and sep < 0.55: best = (k, lab, C)   # accept this finer split
+            Cn = X.unit(C); sep = max((Cn @ Cn.T)[np.triu_indices(k, 1)])
+            if min(sizes) >= 0.15 and sep < 0.55: best = (k, lab, C)
         res[w] = best
     return res
 
-def to_octonion(centroid8):
-    o = centroid8.copy(); return o / (np.linalg.norm(o) + 1e-12)   # top-8 global axes -> unit octonion
+def to_octonion(centroid):
+    o = centroid[1:9].copy()                       # skip dim0 (the frequency axis) -> 8 semantic dims
+    return o / (np.linalg.norm(o) + 1e-12)
 
 if __name__ == "__main__":
     t0 = time.time()
@@ -52,21 +57,25 @@ if __name__ == "__main__":
     M = X.build(TEXT, vocab_size=30000); wi = M["wi"]; emb = M["emb"]; vocab = M["vocab"]
     words = re.findall(r"[a-z']+", TEXT.lower())
     ids = [wi[w] for w in words if w in wi]
+    from collections import Counter
+    freq = Counter(ids); N = sum(freq.values())
+    stop = set(i for i, _ in freq.most_common(150))               # function-word stoplist
+    idf = {u: np.log(1 + N / c) for u, c in freq.items()}
     print("built %.0fs, %d tokens" % (time.time()-t0, len(ids)))
     targets = ["bank", "spring", "light", "bear", "rock", "fair", "ground", "court",
-               "therefore", "hydrogen", "nevertheless", "elizabeth"]
+               "table", "head", "fire", "matter", "elizabeth", "hydrogen"]
     tids = {wi[w] for w in targets if w in wi}
-    R = sense_sets(M, ids, tids)
+    R = sense_sets(M, ids, tids, freq, stop, idf)
     def near(v, k=6):
-        return [vocab[i] for i in (emb @ X.unit(v)).argsort()[::-1] if vocab[i] not in targets][:k]
+        return [vocab[i] for i in (emb @ X.unit(v)).argsort()[::-1]
+                if vocab[i] not in targets and wi[vocab[i]] not in stop][:k]
     out = []
     for w in targets:
         if w not in wi or R.get(wi[w]) is None: out.append("%-12s (too rare)" % w); continue
         k, lab, C = R[wi[w]]
         out.append("%-12s  SET SIZE = %d" % (w, k))
         for j in range(k):
-            oct8 = to_octonion(C[j][:8])
-            out.append("    sense %d  (%.0f%%):  %s   |oct[:3]=%s" %
-                       (j+1, 100*np.mean(lab == j), ", ".join(near(C[j])),
-                        np.array2string(oct8[:3], precision=2)))
+            oct8 = to_octonion(C[j])
+            out.append("    sense %d  (%.0f%%):  %s" %
+                       (j+1, 100*np.mean(lab == j), ", ".join(near(C[j]))))
     print("B64TS:" + base64.b64encode("\n".join(out).encode()).decode())
