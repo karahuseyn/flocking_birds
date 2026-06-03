@@ -225,9 +225,9 @@ def _clean(t):
     return t.replace(" @-@ ", "-").replace(" @,@ ", ",").replace(" @.@ ", ".").replace(" @ ", " ")
 
 def parse_wikitext(text, maxpairs):
+    # WikiText: level-1 articles ' = Title = ', sections ' = = X = = '.
+    # Build (title, intro-paragraph) pairs from each article's first paragraph.
     text = _clean(text)
-    """WikiText format: level-1 articles ' = Title = ', sections ' = = X = = '. Build
-    (title, intro-paragraph) pairs from each article's first paragraph."""
     hs = list(re.compile(r"(?m)^ ?= ([^=\n]+?) =\s*$").finditer(text))
     pairs = []
     for i, h in enumerate(hs):
@@ -249,9 +249,21 @@ def parse_paragraphs(text, maxpairs):
         if len(pairs) >= maxpairs: break
     return pairs
 
+JUNK = ("vocab", "merges", "tokenizer", "config", "special_tokens", "added_tokens",
+        "readme", "license", "sample_text", "gitattributes", "metadata", "index")
+def _is_junk(path):
+    b = os.path.basename(path).lower()
+    return any(j in b for j in JUNK)
+
+def _looks_like_prose(t):
+    s = t[:8000]
+    if any(x in s for x in ("[PAD]", "[unused", "[CLS]", "[SEP]", "[MASK]")): return False
+    lines = [l for l in s.split("\n") if l.strip()][:60]
+    return bool(lines) and sum(len(l.split()) for l in lines) / len(lines) >= 4.0
+
 def read_raw_text(f, cap=150_000_000):
     try:
-        if f.lower().endswith(".txt"):
+        if f.lower().endswith((".txt", ".tokens", ".raw")):
             return open(f, encoding="utf-8", errors="ignore").read(cap)
         if f.lower().endswith(".parquet"):
             import pandas as pd; df = pd.read_parquet(f)
@@ -273,33 +285,34 @@ def read_raw_text(f, cap=150_000_000):
     return None
 
 def load_data(maxpairs=200000, datadir="/kaggle/input"):
-    files = [f for f in glob.glob(os.path.join(datadir, "**", "*"), recursive=True)
-             if f.lower().endswith((".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".parquet", ".txt"))]
-    print("found %d candidate data files under %s" % (len(files), datadir), flush=True)
+    allf = [f for f in glob.glob(os.path.join(datadir, "**", "*"), recursive=True) if os.path.isfile(f)]
+    files = [f for f in allf if not _is_junk(f)]
+    print("found %d files (%d after dropping vocab/config/tokenizer junk)" % (len(allf), len(files)), flush=True)
     pairs = []
+    # 1) STRUCTURED: csv/tsv/parquet with label+answer columns, or json/jsonl Wikidata entities
     for f in sorted(files, key=os.path.getsize, reverse=True):
+        ext = f.lower().rsplit(".", 1)[-1]
         try:
-            if f.lower().endswith((".csv", ".tsv", ".parquet")):
+            if ext in ("csv", "tsv", "parquet"):
                 import pandas as pd
-                df = pd.read_parquet(f) if f.endswith(".parquet") else pd.read_csv(f, sep="\t" if f.endswith(".tsv") else ",", on_bad_lines="skip")
+                df = pd.read_parquet(f) if ext == "parquet" else pd.read_csv(f, sep="\t" if ext == "tsv" else ",", on_bad_lines="skip")
                 cols = {c.lower(): c for c in df.columns}
                 lc = next((cols[c] for c in cols if c in LABELKEYS), None)
-                ac = next((cols[c] for c in cols if c in ANSWKEYS), None)
-                if lc and ac:
-                    print("  %s: cols search=%s answer=%s" % (os.path.basename(f), lc, ac), flush=True)
+                ac = next((cols[c] for c in cols if c in ANSWKEYS and cols[c] != cols.get("text")), None) or next((cols[c] for c in cols if c in ANSWKEYS), None)
+                if lc and ac and lc != ac:
+                    print("  table %s: search=%s answer=%s" % (os.path.basename(f), lc, ac), flush=True)
                     for s, a in zip(df[lc].astype(str), df[ac].astype(str)):
-                        if 1 <= len(s.split()) and 2 <= len(a.split()):
+                        if len(a.split()) >= 2:
                             pairs.append(((s + " " + a).strip(), (s + " is " + a + ".").strip()))
                             if len(pairs) >= maxpairs: break
-            else:
+            elif ext in ("json", "jsonl", "ndjson"):
                 with open(f, encoding="utf-8", errors="ignore") as fh:
-                    head = fh.read(2)
-                    fh.seek(0)
-                    if head.startswith("["):                          # one big JSON array
+                    head = fh.read(1); fh.seek(0)
+                    if head == "[":
                         data = json.load(fh)
-                        it = data if isinstance(data, list) else data.get("rows", [])
+                        it = data if isinstance(data, list) else (data.get("rows", []) if isinstance(data, dict) else [])
                     else:
-                        it = fh                                        # JSON lines
+                        it = fh                                           # JSON lines
                     for line in it:
                         try: d = line if isinstance(line, dict) else json.loads(line)
                         except Exception: continue
@@ -311,30 +324,31 @@ def load_data(maxpairs=200000, datadir="/kaggle/input"):
                         if pr: pairs.append(pr)
                         if len(pairs) >= maxpairs: break
         except Exception as e:
-            print("  skip %s (%s)" % (os.path.basename(f), e), flush=True)
+            print("  skip table/json %s (%s)" % (os.path.basename(f), e), flush=True)
         if len(pairs) >= maxpairs: break
-    # structured pass found little -> treat the largest text sources as raw WikiText/Wikipedia
+    # 2) RAW TEXT fallback (WikiText / Wikipedia): .txt/.tokens/.raw + parquet/json 'text' column,
+    #    skipping vocab/config junk and any source that doesn't look like prose.
     if len(pairs) < 200:
-        print("  structured parse found %d pairs; trying RAW TEXT (WikiText/Wikipedia)..." % len(pairs), flush=True)
+        print("  structured parse -> %d pairs; reading RAW TEXT..." % len(pairs), flush=True)
         raw = ""
         for f in sorted(files, key=os.path.getsize, reverse=True):
-            if not f.lower().endswith((".txt", ".parquet", ".json", ".jsonl", ".ndjson")): continue
+            if f.lower().rsplit(".", 1)[-1] not in ("txt", "tokens", "raw", "parquet", "json", "jsonl", "ndjson"): continue
             t = read_raw_text(f)
-            if t and len(t) > 200:
-                raw += "\n" + t
-                print("  raw text from %s (%.0f MB so far)" % (os.path.basename(f), len(raw) / 1e6), flush=True)
+            if not t or len(t) < 500 or not _looks_like_prose(t):
+                print("  - skip %s (not prose / empty)" % os.path.basename(f), flush=True); continue
+            raw += "\n" + t
+            print("  + %s (%.0f MB total)" % (os.path.basename(f), len(raw) / 1e6), flush=True)
             if len(raw) > 150_000_000: break
         if raw:
             pairs = parse_wikitext(raw, maxpairs)
             if len(pairs) < 200:
-                print("  few articles via headings -> paragraph retrieval mode", flush=True)
+                print("  few '= Title =' articles -> paragraph retrieval mode", flush=True)
                 pairs = parse_paragraphs(raw, maxpairs)
-    # dedup, drop empties
     seen, out = set(), []
     for s, a in pairs:
         if s and a and s not in seen: seen.add(s); out.append((s, a))
     if out:
-        print("  sample pair: PROMPT-side=%r  ANSWER-side=%r" % (out[0][0][:80], out[0][1][:80]), flush=True)
+        print("  -> %d pairs. sample: PROMPT=%r ANSWER=%r" % (len(out), out[0][0][:70], out[0][1][:70]), flush=True)
     return out[:maxpairs]
 
 DEMO = [("Paris capital of France", "Paris is the capital and most populous city of France."),
