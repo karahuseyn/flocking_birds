@@ -165,9 +165,9 @@ class OctoBot:
             best = self.pairs[int(nn[0])][1]
             return (best, self.pairs[int(nn[0])][0]) if with_match else best
         cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0)
-        keep = qs >= 0.25 * qs.max()
+        keep = qs >= 0.40 * qs.max()                                       # tighter topic gate
         if keep.sum() >= m: pool = [pool[i] for i in np.where(keep)[0]]; cv, qs = cv[keep], qs[keep]
-        idx = self._mmr(cv, 0.6 * (cv @ g) + 0.2 * (cv @ cen) + 0.2 * qs, m)
+        idx = self._mmr(cv, 0.6 * qs + 0.25 * (cv @ g) + 0.15 * (cv @ cen), m)   # favour query relevance
         ans = " ".join(pool[i] for i in idx)
         return (ans, self.pairs[int(nn[0])][0]) if with_match else ans
 
@@ -219,9 +219,61 @@ def _wikidata_entity(d):
     if not lab or not desc: return None
     return ((lab + " " + alias + " " + desc).strip(), (lab + " is " + desc + ".").strip())
 
+# ---- raw text (WikiText / Wikipedia): title -> intro paragraph, or paragraph retrieval ----
+def _clean(t):
+    return t.replace(" @-@ ", "-").replace(" @,@ ", ",").replace(" @.@ ", ".").replace(" @ ", " ")
+
+def parse_wikitext(text, maxpairs):
+    text = _clean(text)
+    """WikiText format: level-1 articles ' = Title = ', sections ' = = X = = '. Build
+    (title, intro-paragraph) pairs from each article's first paragraph."""
+    hs = list(re.compile(r"(?m)^ ?= ([^=\n]+?) =\s*$").finditer(text))
+    pairs = []
+    for i, h in enumerate(hs):
+        title = h.group(1).strip()
+        body = text[h.end():(hs[i + 1].start() if i + 1 < len(hs) else len(text))]
+        body = re.split(r"(?m)^ ?= = ", body)[0]                      # cut at first section
+        intro = " ".join(re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", body).strip())[:3]).strip()
+        if title and 1 <= len(title.split()) <= 8 and len(intro.split()) >= 6:
+            pairs.append(((title + " " + intro).strip(), (title + " : " + intro).strip()))
+        if len(pairs) >= maxpairs: break
+    return pairs
+
+def parse_paragraphs(text, maxpairs):
+    text = _clean(text); pairs = []
+    for para in re.split(r"\n\s*\n", text):
+        para = re.sub(r"\s+", " ", para).strip()
+        if len(para.split()) >= 8 and not para.startswith("="):
+            pairs.append((para, para))
+        if len(pairs) >= maxpairs: break
+    return pairs
+
+def read_raw_text(f, cap=150_000_000):
+    try:
+        if f.lower().endswith(".txt"):
+            return open(f, encoding="utf-8", errors="ignore").read(cap)
+        if f.lower().endswith(".parquet"):
+            import pandas as pd; df = pd.read_parquet(f)
+            col = next((c for c in df.columns if c.lower() in ("text", "content", "page", "article", "wikitext", "sentence", "paragraph")), None)
+            if col is None: return None
+            return "\n".join(df[col].astype(str).tolist())[:cap]
+        if f.lower().endswith((".json", ".jsonl", ".ndjson")):
+            out = []
+            for line in open(f, encoding="utf-8", errors="ignore"):
+                try: d = json.loads(line)
+                except Exception: continue
+                if isinstance(d, dict):
+                    t = d.get("text") or d.get("content") or ""
+                    if t: out.append(str(t))
+                if sum(len(x) for x in out) > cap: break
+            return "\n".join(out) if out else None
+    except Exception as e:
+        print("  raw-read skip %s (%s)" % (os.path.basename(f), e), flush=True)
+    return None
+
 def load_data(maxpairs=200000, datadir="/kaggle/input"):
     files = [f for f in glob.glob(os.path.join(datadir, "**", "*"), recursive=True)
-             if f.lower().endswith((".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".parquet"))]
+             if f.lower().endswith((".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".parquet", ".txt"))]
     print("found %d candidate data files under %s" % (len(files), datadir), flush=True)
     pairs = []
     for f in sorted(files, key=os.path.getsize, reverse=True):
@@ -260,10 +312,28 @@ def load_data(maxpairs=200000, datadir="/kaggle/input"):
         except Exception as e:
             print("  skip %s (%s)" % (os.path.basename(f), e), flush=True)
         if len(pairs) >= maxpairs: break
+    # structured pass found little -> treat the largest text sources as raw WikiText/Wikipedia
+    if len(pairs) < 200:
+        print("  structured parse found %d pairs; trying RAW TEXT (WikiText/Wikipedia)..." % len(pairs), flush=True)
+        raw = ""
+        for f in sorted(files, key=os.path.getsize, reverse=True):
+            if not f.lower().endswith((".txt", ".parquet", ".json", ".jsonl", ".ndjson")): continue
+            t = read_raw_text(f)
+            if t and len(t) > 200:
+                raw += "\n" + t
+                print("  raw text from %s (%.0f MB so far)" % (os.path.basename(f), len(raw) / 1e6), flush=True)
+            if len(raw) > 150_000_000: break
+        if raw:
+            pairs = parse_wikitext(raw, maxpairs)
+            if len(pairs) < 200:
+                print("  few articles via headings -> paragraph retrieval mode", flush=True)
+                pairs = parse_paragraphs(raw, maxpairs)
     # dedup, drop empties
     seen, out = set(), []
     for s, a in pairs:
         if s and a and s not in seen: seen.add(s); out.append((s, a))
+    if out:
+        print("  sample pair: PROMPT-side=%r  ANSWER-side=%r" % (out[0][0][:80], out[0][1][:80]), flush=True)
     return out[:maxpairs]
 
 DEMO = [("Paris capital of France", "Paris is the capital and most populous city of France."),
