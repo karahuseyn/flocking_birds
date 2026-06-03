@@ -165,9 +165,10 @@ class OctoBot:
             best = self.pairs[int(nn[0])][1]
             return (best, self.pairs[int(nn[0])][0]) if with_match else best
         cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0)
-        keep = qs >= 0.40 * qs.max()                                       # tighter topic gate
-        if keep.sum() >= m: pool = [pool[i] for i in np.where(keep)[0]]; cv, qs = cv[keep], qs[keep]
-        idx = self._mmr(cv, 0.6 * qs + 0.25 * (cv @ g) + 0.15 * (cv @ cen), m)   # favour query relevance
+        keep = qs >= 0.40 * qs.max()                                       # keep only on-topic facts
+        if keep.any(): pool = [pool[i] for i in np.where(keep)[0]]; cv, qs = cv[keep], qs[keep]
+        m_eff = max(1, min(m, len(pool)))                                  # adaptive: as many as are on-topic
+        idx = self._mmr(cv, 0.6 * qs + 0.25 * (cv @ g) + 0.15 * (cv @ cen), m_eff)
         ans = " ".join(pool[i] for i in idx)
         return (ans, self.pairs[int(nn[0])][0]) if with_match else ans
 
