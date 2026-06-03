@@ -65,6 +65,25 @@ def _role(member_sents):
     if max(scores) == 0: return len(ROLES), "other"
     r = int(np.argmax(scores)); return r, ROLES[r][0]
 
+TEMPLATE = set(("treated treatment treat treats cause causes caused causing symptom symptoms sign "
+                "signs diagnosed diagnosis diagnose prevent prevention prevented risk factor factors "
+                "work works working affect affects used use uses help helps managed manage").split())
+
+_NAV = ("booklet", "fact sheet", "see the topics", "what i need to know", "espaol",
+        "read more", "click here", "for more information")
+_RESEARCH = ("to evaluate", "to determine", "to assess", "to investigate", "to compare",
+             "to confirm", "the objective", "the aim of", "the purpose of", "this study",
+             "this trial", "this analysis", "we evaluated", "we assessed", "we investigated",
+             "randomized", "randomised", "multicenter", "multicentre", "post hoc", "double-blind",
+             "placebo", "was defined as", "were administered", "were analyzed", "were analysed",
+             "hypothesis", "efficacy and safety", "( n =", "p <", "p<", "p =")
+
+def _listy(s):
+    # drop navigation/booklet dumps AND research-methodology sentences (jargon, not patient facts)
+    low = s.lower()
+    if s.count(" - ") >= 2: return True
+    return any(x in low for x in _NAV) or any(x in low for x in _RESEARCH)
+
 def spherical_kmeans(Q, k, iters=25, seed=0):
     rng = np.random.default_rng(seed); Q = unit(Q)
     C = Q[rng.choice(len(Q), k, replace=False)].copy()
@@ -117,17 +136,27 @@ def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_re
     as a chain of octonion IMPLIES rotations verified by modus-ponens. role_mode 'oct' = octonion
     role prototypes (else cue words). gate drops off-topic aspects; entity_boost binds to topic."""
     pe, nn = bot._match(query, k=k_nbr, lex=lex)                       # fuzzy scan of the world model
+    qt = toks(query, bot.wi); qbg = set(zip(qt, qt[1:]))              # query bigrams (fano-grams)
+    vocab = bot.M["vocab"]                                            # salient entity tokens, minus
+    ent = set(t for t in qt if bot.idf[t] > 1.0 and vocab[t] not in TEMPLATE)   # template/role words
     seen, pool = set(), []
     for j in nn:
         for s in sents(bot.train[int(j)][1]):
-            if s not in seen and len(s.split()) >= 4: seen.add(s); pool.append(s)
+            if s not in seen and len(s.split()) >= 4 and not _listy(s): seen.add(s); pool.append(s)
     if not pool:
         return (bot.answer(query), [], 1.0) if return_meta else bot.answer(query)
+    stoks = [set(toks(s, bot.wi)) for s in pool]; sbg = [set(zip(toks(s, bot.wi), toks(s, bot.wi)[1:])) for s in pool]
+    # entity-requirement: keep facts that actually mention the query entity (if enough remain) --
+    # cuts the topic-confusion bleed (hypertension -> kidney/dialysis sentences)
+    if ent:
+        keep = [i for i in range(len(pool)) if ent & stoks[i]]
+        if len(keep) >= 3:
+            pool = [pool[i] for i in keep]; stoks = [stoks[i] for i in keep]; sbg = [sbg[i] for i in keep]
     cv = unit(np.array([bot._vec(s) for s in pool])); qs = cv @ pe
-    # topic-binding: boost facts that actually mention the query's salient entity token(s)
-    ent = set(t for t in toks(query, bot.wi) if bot.idf[t] > 1.0)
+    # fano-gram: prefer facts sharing the query's ORDER-SENSITIVE bigrams ('type 2' over 'type 1')
+    if qbg: qs = qs + 0.5 * np.array([len(qbg & b) for b in sbg])
     if entity_boost and ent:
-        qs = qs + entity_boost * np.array([1.0 if ent & set(toks(s, bot.wi)) else 0.0 for s in pool])
+        qs = qs + entity_boost * np.array([1.0 if ent & t else 0.0 for t in stoks])
     idx = np.argsort(-qs)[:n_facts]; pool = [pool[i] for i in idx]; cv, qs = cv[idx], qs[idx]
     k = int(min(max_aspects, max(2, len(pool) // 6)))
     lab, C = spherical_kmeans(cv, k, seed=0)                            # cluster -> topic headings
