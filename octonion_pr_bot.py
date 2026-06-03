@@ -5,7 +5,7 @@
 #   from octonion_pr_bot import OctonionPRBot
 #   bot = OctonionPRBot().fit(pairs); print(bot.answer("i have a headache and fever"))
 #   bot.serve(8000)          # browser UI at http://localhost:8000  (local/Kaggle)
-import json, time, math
+import json, time, math, re
 import numpy as np
 from collections import Counter
 import octonion_gpt as G
@@ -123,6 +123,51 @@ class OctonionPRBot:
         idx = self._mmr(cv, score, m=m)
         ans = " ".join(pool[i] for i in idx)
         return (ans, self.train[int(nn[0])][0]) if with_match else ans
+
+    _SEGSTOP = set(("im i'm you're dont don't cant can't really very much pretty quite lately "
+                    "always think feel feeling getting going they them their your his her our "
+                    "this that these those coming back gone been have having from with about").split())
+
+    def _segments(self, prompt):
+        """Split a long, multi-part prompt into sub-questions at clause / conjunction breaks;
+        keep each segment that carries a salient (rare, >=4-letter, non-filler) content token."""
+        segs = []
+        for p in re.split(r"\band\b|\balso\b|\bplus\b|\bas well as\b|\bbut\b|[,;.?]", prompt.lower()):
+            ct = sorted((t for t in dict.fromkeys(toks(p, self.wi))
+                         if self.idf[t] > 1.5 and len(self.M["vocab"][t]) >= 4
+                         and self.M["vocab"][t] not in self._SEGSTOP), key=lambda t: -self.idf[t])
+            if ct: segs.append((p.strip(), ct))
+        return segs
+
+    _ASPECT = set(("treated treat treatment prevent prevention prevented cure cured manage "
+                   "managed diagnosed recur recurrence relieve relieved").split())
+    _REQUEST = set(("should advice help anything suggestion suggestions recommend please "
+                    "what do").split())
+
+    def respond(self, prompt, m=3):
+        """Consolidated entry point. Short prompt -> one answer; long multi-part prompt ->
+        capture each part, route it through match->transport->extract, answer each. Drops pure
+        request phrases ('what should i do'); for entity-less aspect clauses ('how are they
+        treated') it carries the prompt's dominant entity so context isn't lost."""
+        segs = self._segments(prompt)
+        if len(segs) <= 1:
+            return self.answer(prompt, m=m)
+        # dominant entity PHRASE = top-2 idf among real-entity tokens (not aspect/request words)
+        ent_tok = [t for _, ct in segs for t in ct
+                   if self.M["vocab"][t] not in self._ASPECT and self.M["vocab"][t] not in self._REQUEST]
+        gphrase = " ".join(self.M["vocab"][t] for t in sorted(set(ent_tok), key=lambda t: -self.idf[t])[:2])
+        out, used = [], set()
+        for text, ct in segs:
+            words = [self.M["vocab"][t] for t in ct]
+            if all(w in self._REQUEST for w in words):
+                continue                                                    # drop request noise
+            query = (gphrase + " " + text) if all(w in self._ASPECT for w in words) else text
+            ans, match = self.answer(query, m=m, with_match=True)
+            if match in used:
+                continue
+            used.add(match)
+            out.append("[%s] %s" % (" / ".join(words[:2]), ans))
+        return "\n".join(out)
 
     def serve(self, port=8000):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
