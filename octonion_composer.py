@@ -14,7 +14,32 @@
 import numpy as np
 from exp_fano_layer import unit
 from octonion_pr_extract import sents
+from octonion_pr_slot import toks
 import octonion_infer as INF
+
+# octonion-grounded role prototypes: each role is a point in the same PMI-SVD octonion space,
+# embedded from canonical seed phrases. An aspect's role = nearest prototype (cosine on S^7),
+# replacing brittle cue-word counting with geometry in the model's own concept space.
+SEED = {
+    "definition": "is a type of disease condition or disorder a form of refers to defined as",
+    "cause": "is caused by due to leads to results from because risk factor associated with",
+    "mechanism": "occurs when the body the process by which is produced released blocks inhibits",
+    "symptom": "symptoms and signs pain swelling fever fatigue nausea you may feel",
+    "diagnosis": "is diagnosed by a test detected examination biopsy imaging scan blood test",
+    "treatment": "is treated with medication therapy surgery managed drugs relieve cure dose",
+    "prevention": "can be prevented avoid vaccine vaccination lifestyle changes reduce the risk",
+    "prognosis": "prognosis outcome survival recovery chronic complications fatal long term",
+}
+ROLE_ORDER = list(SEED)
+
+def _role_protos(bot):
+    if not hasattr(bot, "_role_proto_cache"):
+        bot._role_proto_cache = np.array([bot._vec(SEED[r]) for r in ROLE_ORDER])
+    return bot._role_proto_cache
+
+def _role_oct(bot, centroid96):
+    r = int(np.argmax(_role_protos(bot) @ unit(centroid96)))
+    return r, ROLE_ORDER[r]
 
 # canonical logic of exposition: the order in which a reasoned account unfolds. Each aspect's
 # role is detected from its sentences' cue words; the composition follows this implication chain.
@@ -85,10 +110,12 @@ def compose(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_rel=0.3)
     order = _geodesic_chain(cent, int(np.argmax(cent @ pe)))            # relation-consistent fano chain
     return " ".join(pool[reps[o]] for o in order)
 
-def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_rel=0.3, return_meta=False):
+def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_rel=0.4,
+                  role_mode="cue", gate=0.55, entity_boost=0.15, return_meta=False):
     """INFERENTIAL composition: order aspects by the logic of exposition (definition -> cause
-    -> mechanism -> symptom -> diagnosis -> treatment -> prevention -> prognosis), and realise
-    that order as a chain of octonion IMPLIES rotations verified by modus-ponens (octonion_infer)."""
+    -> mechanism -> symptom -> diagnosis -> treatment -> prevention -> prognosis) and realise it
+    as a chain of octonion IMPLIES rotations verified by modus-ponens. role_mode 'oct' = octonion
+    role prototypes (else cue words). gate drops off-topic aspects; entity_boost binds to topic."""
     pe, nn = bot._match(query, k=k_nbr, lex=lex)                       # fuzzy scan of the world model
     seen, pool = set(), []
     for j in nn:
@@ -97,6 +124,10 @@ def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_re
     if not pool:
         return (bot.answer(query), [], 1.0) if return_meta else bot.answer(query)
     cv = unit(np.array([bot._vec(s) for s in pool])); qs = cv @ pe
+    # topic-binding: boost facts that actually mention the query's salient entity token(s)
+    ent = set(t for t in toks(query, bot.wi) if bot.idf[t] > 1.0)
+    if entity_boost and ent:
+        qs = qs + entity_boost * np.array([1.0 if ent & set(toks(s, bot.wi)) else 0.0 for s in pool])
     idx = np.argsort(-qs)[:n_facts]; pool = [pool[i] for i in idx]; cv, qs = cv[idx], qs[idx]
     k = int(min(max_aspects, max(2, len(pool) // 6)))
     lab, C = spherical_kmeans(cv, k, seed=0)                            # cluster -> topic headings
@@ -105,9 +136,12 @@ def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_re
         mem = np.where(lab == j)[0]
         if not len(mem): continue
         rep = mem[int(np.argmax((cv[mem] @ C[j]) + w_rel * qs[mem]))]
-        rank, name = _role([pool[m] for m in mem])
-        oct8 = unit(unit(C[j]).reshape(12, 8).mean(0))                  # aspect heading as one octonion
-        aspects.append((pool[rep], oct8, rank, name, float(qs[mem].max())))
+        relev = float(C[j] @ pe)                                        # heading's topic relevance
+        rank, name = _role_oct(bot, C[j]) if role_mode == "oct" else _role([pool[m] for m in mem])
+        aspects.append((pool[rep], unit(unit(C[j]).reshape(12, 8).mean(0)), rank, name, relev))
+    # topic gate: drop off-topic headings (relevance well below the best)
+    best = max(a[4] for a in aspects)
+    aspects = [a for a in aspects if a[4] >= gate * best] or aspects
     # mantik silsilesi: order by exposition role-rank, then by topic relevance
     order = sorted(range(len(aspects)), key=lambda i: (aspects[i][2], -aspects[i][4]))
     # realise the order as composed octonion IMPLIES rotations; verify by modus-ponens search
@@ -131,9 +165,11 @@ if __name__ == "__main__":
           "how can i lower my blood pressure?"]
     out = []
     for q in qs:
-        txt, roles, fid = compose_logic(bot, q, return_meta=True)
+        ot, oroles, _ = compose_logic(bot, q, gate=0.0, entity_boost=0.0, return_meta=True)   # no topic-bind
+        nt, nroles, fid = compose_logic(bot, q, return_meta=True)       # + gate + entity-bind (cue roles)
         out += ["Q: " + q,
-                "  COMPOSE(geodesic): " + compose(bot, q)[:300],
-                "  LOGIC roles: " + " -> ".join(roles) + ("   [implies-chain fidelity=%.3f]" % fid),
-                "  LOGIC(inferential): " + txt[:340], ""]
+                "  OLD roles: " + " -> ".join(oroles),
+                "  OLD: " + ot[:300],
+                "  NEW roles: " + " -> ".join(nroles) + ("   [fidelity=%.3f]" % fid),
+                "  NEW: " + nt[:330], ""]
     print("B64CMP:" + base64.b64encode("\n".join(out).encode()).decode())
