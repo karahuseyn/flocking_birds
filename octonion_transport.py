@@ -33,26 +33,33 @@ from octonion_lm import octo_mul
 def unit(v):
     return v / (np.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
 
-# the 7 Fano generators: L_g x = e_g (x)  x  (left octonion multiplication, 8x8)
+# the 8 octonion left-multiplications E_i (L_{e_i} x = e_i (x) x), 8x8; E_0 = I.
 _E = np.eye(8)
 FANO_GEN = [np.stack([octo_mul(_E[g], _E[k]) for k in range(8)], axis=1) for g in range(8)]
+# so(8) BASIS (Freedman-Shokrian-Zini-Wang, Thm 5.1): {E_i E_j : 0<=i<j<=7} are 28 skew-
+# orthogonal matrices (M^2 = -I) spanning so(8). The 7 pairs (0,j) are the single Fano
+# generators E_j; the 21 pairs (i,j>=1) are the products that lift 7 -> full SO(8) (dim 28).
+SO8_GEN, SO8_LABEL = [], []
+for i in range(8):
+    for j in range(i + 1, 8):
+        SO8_GEN.append(FANO_GEN[i] @ FANO_GEN[j]); SO8_LABEL.append((i, j))
+SO8_GEN = np.stack(SO8_GEN)                                    # (28, 8, 8)
+assert max(float(np.abs(M @ M + np.eye(8)).max()) for M in SO8_GEN) < 1e-9, "M^2 != -I"
+GEN_IDX = list(range(len(SO8_GEN)))                           # active generators (A/B switch)
 
 def rotate(X, g, theta):
-    """Apply the SQUARED Fano rotation R_g(theta)^2 = cos(2 theta) I + sin(2 theta) L_g to
-    octonions X (..., 8). Squaring the rotation OPERATOR (not the amplitudes) is the double-angle
-    rotation exp(2 theta L_g): it stays an EXACT, norm-preserving S^7 rotation (R^T R = I), so the
-    division-algebra structure is kept -- the only change is the angle parametrisation (theta -> 2 theta)."""
-    t = 2.0 * theta
-    return np.cos(t) * X + np.sin(t) * (X @ FANO_GEN[g].T)
+    """Apply the Fano/so(8) rotation R_g(theta) = cos(theta) I + sin(theta) M_g, M_g = SO8_GEN[g]
+    (an exact, norm-preserving S^7 rotation since M_g^2 = -I). g indexes the 28-element so(8)
+    basis; the paper's universal gates are exactly products of such exp(theta E_i E_j)."""
+    return np.cos(theta) * X + np.sin(theta) * (X @ SO8_GEN[g].T)
 
 def best_move(X, T):
-    """Closed-form best (generator, angle) for the squared (double-angle) rotation. Maximizes
-    sum_i <R_g(th)^2 x_i, t_i> = A cos(2 th) + B sin(2 th); the optimum is th* = 0.5 atan2(B, A),
-    value sqrt(A^2 + B^2). Smooth and norm-preserving, unlike the squared-amplitude form."""
-    best = (1, 0.0, -np.inf)
-    for g in range(1, 8):                       # 7 Fano points = 7 generators
-        A = np.sum(X * T); B = np.sum((X @ FANO_GEN[g].T) * T)
-        th = 0.5 * np.arctan2(B, A); val = A * np.cos(2 * th) + B * np.sin(2 * th)
+    """Closed-form best (generator, angle) over the ACTIVE so(8) basis. Maximizes
+    sum_i <R_g(th) x_i, t_i> = A cos th + B sin th  ->  th* = atan2(B, A), value sqrt(A^2+B^2)."""
+    A = float(np.sum(X * T)); best = (GEN_IDX[0], 0.0, -np.inf)
+    for g in GEN_IDX:
+        B = float(np.sum((X @ SO8_GEN[g].T) * T))
+        th = np.arctan2(B, A); val = A * np.cos(th) + B * np.sin(th)
         if val > best[2]:
             best = (g, th, val)
     return best[0], best[1]
