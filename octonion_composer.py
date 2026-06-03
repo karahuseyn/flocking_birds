@@ -130,11 +130,10 @@ def compose(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_rel=0.3)
     return " ".join(pool[reps[o]] for o in order)
 
 def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_rel=0.4,
-                  role_mode="cue", gate=0.55, entity_boost=0.15, return_meta=False):
-    """INFERENTIAL composition: order aspects by the logic of exposition (definition -> cause
-    -> mechanism -> symptom -> diagnosis -> treatment -> prevention -> prognosis) and realise it
-    as a chain of octonion IMPLIES rotations verified by modus-ponens. role_mode 'oct' = octonion
-    role prototypes (else cue words). gate drops off-topic aspects; entity_boost binds to topic."""
+                  role_mode="cue", gate=0.55, entity_boost=0.15, order_mode="role", return_meta=False):
+    """INFERENTIAL composition. order_mode 'role' = exposition logic (definition->cause->...->
+    treatment); 'coherence' = the no-leakage equiangular chain that maximises prod cos^2 between
+    consecutive aspects (paper P Q P = cos^2 theta P). gate drops off-topic aspects."""
     pe, nn = bot._match(query, k=k_nbr, lex=lex)                       # fuzzy scan of the world model
     qt = toks(query, bot.wi); qbg = set(zip(qt, qt[1:]))              # query bigrams (fano-grams)
     vocab = bot.M["vocab"]                                            # salient entity tokens, minus
@@ -167,12 +166,17 @@ def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_re
         rep = mem[int(np.argmax((cv[mem] @ C[j]) + w_rel * qs[mem]))]
         relev = float(C[j] @ pe)                                        # heading's topic relevance
         rank, name = _role_oct(bot, C[j]) if role_mode == "oct" else _role([pool[m] for m in mem])
-        aspects.append((pool[rep], unit(unit(C[j]).reshape(12, 8).mean(0)), rank, name, relev))
+        aspects.append((pool[rep], unit(unit(C[j]).reshape(12, 8).mean(0)), rank, name, relev, unit(C[j])))
     # topic gate: drop off-topic headings (relevance well below the best)
     best = max(a[4] for a in aspects)
     aspects = [a for a in aspects if a[4] >= gate * best] or aspects
-    # mantik silsilesi: order by exposition role-rank, then by topic relevance
-    order = sorted(range(len(aspects)), key=lambda i: (aspects[i][2], -aspects[i][4]))
+    if order_mode == "coherence":                                      # no-leakage equiangular chain
+        cen = np.array([a[5] for a in aspects])
+        order = _geodesic_chain(cen, int(np.argmax(cen @ pe)))         # greedy max-cos^2 (= max coherence)
+    else:                                                              # exposition logic (default)
+        order = sorted(range(len(aspects)), key=lambda i: (aspects[i][2], -aspects[i][4]))
+    cen = np.array([a[5] for a in aspects])                            # chain coherence = prod cos^2
+    coh = float(np.prod([(cen[order[t]] @ cen[order[t + 1]]) ** 2 for t in range(len(order) - 1)])) if len(order) > 1 else 1.0
     # realise the order as composed octonion IMPLIES rotations; verify by modus-ponens search
     eng = INF.InferenceEngine(np.array([aspects[i][1] for i in order]))
     for t in range(len(order) - 1): eng.add_rule(t, t + 1)
@@ -181,7 +185,7 @@ def compose_logic(bot, query, k_nbr=80, n_facts=45, max_aspects=7, lex=0.6, w_re
         ok, _, f = eng.prove(0, len(order) - 1, max_depth=len(order) + 1)
         if ok: fid = f
     text = " ".join(aspects[i][0] for i in order)
-    return (text, [aspects[i][3] for i in order], fid) if return_meta else text
+    return (text, [aspects[i][3] for i in order], coh) if return_meta else text
 
 if __name__ == "__main__":
     import json, base64
