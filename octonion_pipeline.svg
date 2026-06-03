@@ -25,8 +25,8 @@
 <rect x="40" y="505" width="880" height="124" rx="8" fill="#e6d6f2" stroke="#7030a0" stroke-width="1.5"/>
 <rect x="40" y="505" width="880" height="28" rx="8" fill="#7030a0"/>
 <text x="52" y="524" font-size="14" font-weight="bold" fill="white">4. TRANSPORT  -  local Fano path  -&gt;  answer-region anchor</text>
-<text x="56" y="556" font-size="12.5" fill="#1a1a1a">Fano rotation (exact S^7):  R_g(theta) = cos(theta).I + sin(theta).L_g ,   L_g x = e_g (x) x</text>
-<text x="56" y="575" font-size="12.5" fill="#1a1a1a">matching pursuit (no grad): A=SUM&lt;x_i,t_i&gt;, B=SUM&lt;L_g x_i, t_i&gt;,  theta* = atan2(B, A)</text>
+<text x="56" y="556" font-size="12.5" fill="#1a1a1a">squared Fano rotation:      R_g(theta)^2 = cos(2 theta).I + sin(2 theta).L_g ,  L_g x = e_g (x) x   (exact S^7, norm-preserving)</text>
+<text x="56" y="575" font-size="12.5" fill="#1a1a1a">matching pursuit (no grad): A=SUM&lt;x_i,t_i&gt;, B=SUM&lt;L_g x_i, t_i&gt;,  theta* = 0.5 atan2(B, A)</text>
 <text x="56" y="594" font-size="12.5" fill="#1a1a1a">fit F on { slots(P_i) -&gt; slots(A_i) }_{i in nn}   (per-slot, greedy compose)</text>
 <text x="56" y="613" font-size="12.5" fill="#1a1a1a">anchor:    g = unit( F( slots(P') ) )       (predicted answer region)</text>
 <rect x="40" y="663" width="880" height="181" rx="8" fill="#f4cccc" stroke="#9c2b2b" stroke-width="1.5"/>

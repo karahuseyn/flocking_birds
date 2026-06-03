@@ -21,8 +21,8 @@ STAGES = [
     "score_i = d_i + 0.6 . L^_i + 3.0 . B^_i      ->   nn = argtop-k(score)",
  ]),
  ("4. TRANSPORT  -  local Fano path  ->  answer-region anchor", "#7030a0", "#e6d6f2", [
-    "Fano rotation (exact S^7):  R_g(theta) = cos(theta).I + sin(theta).L_g ,   L_g x = e_g (x) x",
-    "matching pursuit (no grad): A=SUM<x_i,t_i>, B=SUM<L_g x_i, t_i>,  theta* = atan2(B, A)",
+    "squared Fano rotation:      R_g(theta)^2 = cos(2 theta).I + sin(2 theta).L_g ,  L_g x = e_g (x) x   (exact S^7, norm-preserving)",
+    "matching pursuit (no grad): A=SUM<x_i,t_i>, B=SUM<L_g x_i, t_i>,  theta* = 0.5 atan2(B, A)",
     "fit F on { slots(P_i) -> slots(A_i) }_{i in nn}   (per-slot, greedy compose)",
     "anchor:    g = unit( F( slots(P') ) )       (predicted answer region)",
  ]),

@@ -38,16 +38,21 @@ _E = np.eye(8)
 FANO_GEN = [np.stack([octo_mul(_E[g], _E[k]) for k in range(8)], axis=1) for g in range(8)]
 
 def rotate(X, g, theta):
-    """Apply the Fano rotation R_g(theta) to a batch of octonions X (..., 8)."""
-    return np.cos(theta) * X + np.sin(theta) * (X @ FANO_GEN[g].T)
+    """Apply the SQUARED Fano rotation R_g(theta)^2 = cos(2 theta) I + sin(2 theta) L_g to
+    octonions X (..., 8). Squaring the rotation OPERATOR (not the amplitudes) is the double-angle
+    rotation exp(2 theta L_g): it stays an EXACT, norm-preserving S^7 rotation (R^T R = I), so the
+    division-algebra structure is kept -- the only change is the angle parametrisation (theta -> 2 theta)."""
+    t = 2.0 * theta
+    return np.cos(t) * X + np.sin(t) * (X @ FANO_GEN[g].T)
 
 def best_move(X, T):
-    """Closed-form best (generator, angle) reducing the residual to targets T.
-    Maximizes sum_i <R_g(th) x_i, t_i> = A_g cos th + B_g sin th over g, th."""
+    """Closed-form best (generator, angle) for the squared (double-angle) rotation. Maximizes
+    sum_i <R_g(th)^2 x_i, t_i> = A cos(2 th) + B sin(2 th); the optimum is th* = 0.5 atan2(B, A),
+    value sqrt(A^2 + B^2). Smooth and norm-preserving, unlike the squared-amplitude form."""
     best = (1, 0.0, -np.inf)
     for g in range(1, 8):                       # 7 Fano points = 7 generators
         A = np.sum(X * T); B = np.sum((X @ FANO_GEN[g].T) * T)
-        th = np.arctan2(B, A); val = A * np.cos(th) + B * np.sin(th)
+        th = 0.5 * np.arctan2(B, A); val = A * np.cos(2 * th) + B * np.sin(2 * th)
         if val > best[2]:
             best = (g, th, val)
     return best[0], best[1]
