@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""
+OCTONIONIC GRADIENT-FREE KNOWLEDGE BOT  --  single-file Kaggle script (Wikidata).
+
+No backprop, no gradients, no training loop. The whole model is linear algebra over the
+octonions:
+  * PMI-SVD word embeddings (one-shot truncated SVD)            -> meaning
+  * one octonion o(w) = unit(emb[w][1:9]) in S^7 per token       -> structure
+  * entity-weighted hybrid match: dense + IDF lexical + FANO-GRAM (order-sensitive bigram)
+  * local SO(8) transport: matching pursuit over the 28-element so(8) basis {E_i E_j}
+    (Freedman-Shokrian-Zini-Wang) -> a predicted answer-region anchor
+  * extractive decode (MMR) over the matched neighbourhood
+  * multi-part respond(): split a long prompt, route each concern, carry the topic entity
+
+USAGE on Kaggle:
+  1. Add a Wikidata dataset (any of: JSON/JSONL dump with labels+descriptions, or a CSV/
+     parquet with label/description or question/answer columns) to the notebook.
+  2. Run this file. It auto-discovers data under /kaggle/input, builds the model, and
+     answers the PROMPTS below.
+  Tune with env vars:  MAXPAIRS (default 200000), VOCAB (default 40000), GENS (7 or 28).
+"""
+import os, re, json, math, glob, time
+import numpy as np
+from collections import Counter, defaultdict
+
+def unit(v): return v / (np.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
+# ----------------------------------------------------------------------------- octonions
+def _qmul(x, y):
+    a1, b1, c1, d1 = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
+    a2, b2, c2, d2 = y[..., 0], y[..., 1], y[..., 2], y[..., 3]
+    return np.stack([a1*a2 - b1*b2 - c1*c2 - d1*d2, a1*b2 + b1*a2 + c1*d2 - d1*c2,
+                     a1*c2 - b1*d2 + c1*a2 + d1*b2, a1*d2 + b1*c2 - c1*b2 + d1*a2], -1)
+def octo_mul(a, b):
+    p, q = a[..., :4], a[..., 4:]; r, s = b[..., :4], b[..., 4:]
+    cs = s.copy(); cs[..., 1:] *= -1; cr = r.copy(); cr[..., 1:] *= -1
+    return np.concatenate([_qmul(p, r) - _qmul(cs, q), _qmul(s, p) + _qmul(q, cr)], -1)
+
+_E = np.eye(8)
+FANO_GEN = [np.stack([octo_mul(_E[g], _E[k]) for k in range(8)], axis=1) for g in range(8)]
+SO8_GEN = np.stack([FANO_GEN[i] @ FANO_GEN[j] for i in range(8) for j in range(i + 1, 8)])  # 28
+GEN_IDX = list(range(int(os.environ.get("GENS", 28)) if int(os.environ.get("GENS", 28)) in (7, 28) else 28))
+
+def rotate(X, g, th): return np.cos(th) * X + np.sin(th) * (X @ SO8_GEN[g].T)
+def best_move(X, T):
+    A = float(np.sum(X * T)); best = (GEN_IDX[0], 0.0, -1e18)
+    for g in GEN_IDX:
+        B = float(np.sum((X @ SO8_GEN[g].T) * T)); th = np.arctan2(B, A)
+        v = A * np.cos(th) + B * np.sin(th)
+        if v > best[2]: best = (g, th, v)
+    return best[0], best[1]
+class FanoTransport:
+    def __init__(self): self.path = []
+    def fit(self, X, T, steps=10):
+        cur = X.copy()
+        for _ in range(steps): g, th = best_move(cur, T); cur = rotate(cur, g, th); self.path.append((g, th))
+        return self
+    def __call__(self, X):
+        for g, th in self.path: X = rotate(X, g, th)
+        return X
+def slots(E): return unit(E.reshape(E.shape[0], E.shape[1] // 8, 8))
+def fit_slot(Xs, Ts, steps=10): return [FanoTransport().fit(Xs[:, k], Ts[:, k], steps) for k in range(Xs.shape[1])]
+def apply_slot(F, Xs): return np.stack([F[k](Xs[:, k]) for k in range(len(F))], 1)
+
+# ----------------------------------------------------------------------- PMI-SVD embeddings
+def build_embeddings(words, vocab_size, dim=96, window=5, shift=5.0, verbose=True):
+    vc = Counter(words); vocab = [w for w, _ in vc.most_common(vocab_size)]
+    wi = {w: i for i, w in enumerate(vocab)}; W = len(vocab)
+    ids = np.array([wi[w] for w in words if w in wi], dtype=np.int64)
+    if verbose: print("  corpus %d words -> %d in-vocab, vocab %d" % (len(words), len(ids), W), flush=True)
+    from scipy.sparse import coo_matrix, csr_matrix
+    from scipy.sparse.linalg import svds
+    C = csr_matrix((W, W), dtype=np.float32)
+    for d in range(1, window + 1):
+        a, b = ids[:-d], ids[d:]; data = np.full(len(a), np.float32(1.0 / d), dtype=np.float32)
+        Cd = coo_matrix((data, (a, b)), shape=(W, W)).tocsr(); C = C + Cd + Cd.T
+    tot = C.sum(); Pa = np.asarray(C.sum(1)).ravel() / tot; Cx = C.tocoo()
+    pmi = np.log(Cx.data / tot / (Pa[Cx.row] * Pa[Cx.col] + 1e-30) + 1e-12) - np.log(shift)
+    keep = pmi > 0
+    PPMI = coo_matrix((pmi[keep], (Cx.row[keep], Cx.col[keep])), shape=(W, W)).tocsr()
+    if W <= dim + 1:
+        Ud, Sd, _ = np.linalg.svd(PPMI.toarray(), full_matrices=False); U, S = Ud[:, :dim], Sd[:dim]
+    else:
+        U, S, _ = svds(PPMI, k=min(dim, W - 1)); o = np.argsort(S)[::-1]; U, S = U[:, o], S[o]
+    if U.shape[1] < dim: U = np.pad(U, ((0, 0), (0, dim - U.shape[1]))); S = np.pad(S, (0, dim - len(S)))
+    return vocab, wi, unit(U * np.sqrt(S))
+
+def toks(text, wi): return [wi[w] for w in re.findall(r"[a-z0-9']+", text.lower()) if w in wi]
+
+# ------------------------------------------------------------------------------------ bot
+class OctoBot:
+    _ASPECT = set("treated treat treatment prevent prevention cure cured manage diagnosed cause causes caused discover discovered invented born died founded".split())
+    _REQUEST = set("should advice help anything what do tell give explain about".split())
+    _SEGSTOP = set("im you're dont cant really very much lately always think feel getting going they them their your his her our this that these those coming back been have having from with about who when where which".split())
+
+    def fit(self, pairs, vocab_size=40000, dim=96, verbose=True):
+        t0 = time.time(); self.pairs = pairs
+        words = re.findall(r"[a-z0-9']+", (" \n ".join(p + " " + a for p, a in pairs)).lower())
+        self.vocab, self.wi, self.emb = build_embeddings(words, vocab_size, dim, verbose=verbose)
+        self.octo = unit(self.emb[:, 1:9])
+        df = Counter()
+        for p, a in pairs:
+            for t in set(toks(p + " " + a, self.wi)): df[t] += 1
+        N = len(pairs); self.idf = np.ones(len(self.vocab))
+        for t, c in df.items(): self.idf[t] = math.log((N + 1) / (c + 1)) + 1.0
+        self.EPr = np.array([self._vec(p) for p, _ in pairs]); self.EPru = unit(self.EPr)
+        EAr = np.array([self._vec(a) for _, a in pairs])
+        self.Xtr, self.Ttr = slots(self.EPr), slots(EAr)
+        post = defaultdict(list); bpost = defaultdict(list)
+        for i, (p, _) in enumerate(pairs):
+            tk = toks(p, self.wi)
+            for t in set(tk):
+                if self.idf[t] > 1.0: post[t].append(i)
+            for a, b in zip(tk, tk[1:]): bpost[(a, b)].append(i)
+        self.post = {t: np.array(v) for t, v in post.items()}
+        self.bpost = {g: np.array(v) for g, v in bpost.items()}
+        if verbose: print("  bot ready in %.0fs (pairs=%d vocab=%d gens=%d)" % (time.time()-t0, N, len(self.vocab), len(GEN_IDX)), flush=True)
+        return self
+
+    def _vec(self, txt):
+        t = toks(txt, self.wi)
+        if not t: return np.zeros(self.emb.shape[1])
+        return unit((self.emb[t] * self.idf[t][:, None]).sum(0))
+
+    def _match(self, q, k=40, lex=0.6, wf=3.0):
+        pe = self._vec(q); d = self.EPru @ pe; tk = toks(q, self.wi)
+        qt = [t for t in set(tk) if self.idf[t] > 1.0]
+        if qt:
+            L = np.zeros(len(self.pairs)); tot = 0.0
+            for t in qt:
+                w = self.idf[t]; tot += w; p = self.post.get(t)
+                if p is not None: L[p] += w
+            d = d + lex * (L / (tot + 1e-9))
+        bg = list(zip(tk, tk[1:]))
+        if wf and bg:
+            B = np.zeros(len(self.pairs))
+            for g in bg:
+                p = self.bpost.get(g)
+                if p is not None: B[p] += 1.0
+            d = d + wf * (B / len(bg))
+        return pe, np.argsort(-d)[:k]
+
+    def _mmr(self, cv, score, m, lam=0.7):
+        chosen = []
+        while len(chosen) < m and len(chosen) < len(cv):
+            best, bv = -1, -1e18
+            for i in range(len(cv)):
+                if i in chosen: continue
+                red = max((cv[i] @ cv[j] for j in chosen), default=0.0)
+                v = lam * score[i] - (1 - lam) * red
+                if v > bv: bv, best = v, i
+            chosen.append(best)
+        return sorted(chosen, key=lambda i: -score[i])
+
+    def answer(self, q, k=40, m=3, with_match=False):
+        pe, nn = self._match(q, k)
+        F = fit_slot(self.Xtr[nn], self.Ttr[nn], 10)
+        g = unit(apply_slot(F, slots(pe[None]))[0].reshape(-1))            # SO(8) answer-region anchor
+        seen, pool = set(), []
+        for j in nn:
+            for s in re.split(r"(?<=[.!?])\s+", self.pairs[int(j)][1]):
+                s = s.strip()
+                if len(s.split()) >= 3 and s not in seen: seen.add(s); pool.append(s)
+        if not pool:
+            best = self.pairs[int(nn[0])][1]
+            return (best, self.pairs[int(nn[0])][0]) if with_match else best
+        cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0)
+        keep = qs >= 0.25 * qs.max()
+        if keep.sum() >= m: pool = [pool[i] for i in np.where(keep)[0]]; cv, qs = cv[keep], qs[keep]
+        idx = self._mmr(cv, 0.6 * (cv @ g) + 0.2 * (cv @ cen) + 0.2 * qs, m)
+        ans = " ".join(pool[i] for i in idx)
+        return (ans, self.pairs[int(nn[0])][0]) if with_match else ans
+
+    def _segments(self, prompt):
+        segs = []
+        for p in re.split(r"\band\b|\balso\b|\bplus\b|\bbut\b|\bas well as\b|[,;.?]", prompt.lower()):
+            ct = sorted((t for t in dict.fromkeys(toks(p, self.wi))
+                         if self.idf[t] > 1.5 and len(self.vocab[t]) >= 4 and self.vocab[t] not in self._SEGSTOP),
+                        key=lambda t: -self.idf[t])
+            if ct: segs.append((p.strip(), ct))
+        return segs
+
+    def respond(self, prompt, m=3):
+        segs = self._segments(prompt)
+        if len(segs) <= 1: return self.answer(prompt, m=m)
+        ent = [t for _, ct in segs for t in ct if self.vocab[t] not in self._ASPECT and self.vocab[t] not in self._REQUEST]
+        gph = " ".join(self.vocab[t] for t in sorted(set(ent), key=lambda t: -self.idf[t])[:2])
+        out, used = [], set()
+        for text, ct in segs:
+            words = [self.vocab[t] for t in ct]
+            if all(w in self._REQUEST for w in words): continue
+            query = (gph + " " + text) if all(w in self._ASPECT for w in words) else text
+            ans, match = self.answer(query, m=m, with_match=True)
+            if match in used: continue
+            used.add(match)
+            out.append("[%s] %s" % (" / ".join(words[:2]), ans))
+        return "\n".join(out)
+
+# ------------------------------------------------------------------ Wikidata data loading
+LABELKEYS = ("label", "name", "title", "entity", "term", "question", "aliases", "labels")
+ANSWKEYS = ("description", "desc", "abstract", "text", "answer", "summary", "definition", "content", "descriptions")
+
+def _pick(d, keys):
+    for k in d:
+        if k.lower() in keys:
+            v = d[k]
+            if isinstance(v, dict): v = v.get("en", v.get("value", "")) if v else ""
+            if isinstance(v, dict): v = v.get("value", "")
+            if isinstance(v, list): v = " ".join(str(x.get("value", x) if isinstance(x, dict) else x) for x in v[:5])
+            if v: return str(v)
+    return ""
+
+def _wikidata_entity(d):
+    """Parse a raw Wikidata dump entity -> (search_text, answer_text)."""
+    lab = (((d.get("labels") or {}).get("en") or {}).get("value", "")) or d.get("label", "")
+    desc = (((d.get("descriptions") or {}).get("en") or {}).get("value", "")) or d.get("description", "")
+    al = ((d.get("aliases") or {}).get("en") or [])
+    alias = " ".join(a.get("value", "") for a in al[:5]) if isinstance(al, list) else ""
+    if not lab or not desc: return None
+    return ((lab + " " + alias + " " + desc).strip(), (lab + " is " + desc + ".").strip())
+
+def load_data(maxpairs=200000, datadir="/kaggle/input"):
+    files = [f for f in glob.glob(os.path.join(datadir, "**", "*"), recursive=True)
+             if f.lower().endswith((".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".parquet"))]
+    print("found %d candidate data files under %s" % (len(files), datadir), flush=True)
+    pairs = []
+    for f in sorted(files, key=os.path.getsize, reverse=True):
+        try:
+            if f.lower().endswith((".csv", ".tsv", ".parquet")):
+                import pandas as pd
+                df = pd.read_parquet(f) if f.endswith(".parquet") else pd.read_csv(f, sep="\t" if f.endswith(".tsv") else ",", on_bad_lines="skip")
+                cols = {c.lower(): c for c in df.columns}
+                lc = next((cols[c] for c in cols if c in LABELKEYS), None)
+                ac = next((cols[c] for c in cols if c in ANSWKEYS), None)
+                if lc and ac:
+                    print("  %s: cols search=%s answer=%s" % (os.path.basename(f), lc, ac), flush=True)
+                    for s, a in zip(df[lc].astype(str), df[ac].astype(str)):
+                        if 1 <= len(s.split()) and 2 <= len(a.split()):
+                            pairs.append(((s + " " + a).strip(), (s + " is " + a + ".").strip()))
+                            if len(pairs) >= maxpairs: break
+            else:
+                with open(f, encoding="utf-8", errors="ignore") as fh:
+                    head = fh.read(2)
+                    fh.seek(0)
+                    if head.startswith("["):                          # one big JSON array
+                        data = json.load(fh)
+                        it = data if isinstance(data, list) else data.get("rows", [])
+                    else:
+                        it = fh                                        # JSON lines
+                    for line in it:
+                        try: d = line if isinstance(line, dict) else json.loads(line)
+                        except Exception: continue
+                        if not isinstance(d, dict): continue
+                        pr = _wikidata_entity(d)
+                        if pr is None:
+                            s, a = _pick(d, LABELKEYS), _pick(d, ANSWKEYS)
+                            pr = ((s + " " + a).strip(), (s + " is " + a + ".").strip()) if (s and len(a.split()) >= 2) else None
+                        if pr: pairs.append(pr)
+                        if len(pairs) >= maxpairs: break
+        except Exception as e:
+            print("  skip %s (%s)" % (os.path.basename(f), e), flush=True)
+        if len(pairs) >= maxpairs: break
+    # dedup, drop empties
+    seen, out = set(), []
+    for s, a in pairs:
+        if s and a and s not in seen: seen.add(s); out.append((s, a))
+    return out[:maxpairs]
+
+DEMO = [("Paris capital of France", "Paris is the capital and most populous city of France."),
+        ("Albert Einstein theoretical physicist", "Albert Einstein was a German-born theoretical physicist who developed the theory of relativity."),
+        ("photosynthesis", "Photosynthesis is the process by which plants convert light energy into chemical energy."),
+        ("black hole", "A black hole is a region of spacetime where gravity is so strong that nothing can escape."),
+        ("DNA deoxyribonucleic acid", "DNA is the molecule that carries the genetic instructions for life."),
+        ("Mona Lisa Leonardo da Vinci", "The Mona Lisa is a portrait painting by Leonardo da Vinci.")]
+
+PROMPTS = [
+    "what is the capital of france?",
+    "who was albert einstein?",
+    "what is photosynthesis?",
+    "what is a black hole?",
+    "who painted the mona lisa?",
+    "what is dna?",
+    "who was isaac newton, what did he discover, and when did he live?",
+    "what is the speed of light and why is it important?",
+]
+
+if __name__ == "__main__":
+    MAXPAIRS = int(os.environ.get("MAXPAIRS", 200000)); VOCAB = int(os.environ.get("VOCAB", 40000))
+    t0 = time.time()
+    pairs = load_data(MAXPAIRS)
+    if len(pairs) < 50:
+        print("No usable dataset found under /kaggle/input -- running on a tiny built-in DEMO.", flush=True)
+        pairs = DEMO
+    print("loaded %d pairs in %.0fs" % (len(pairs), time.time()-t0), flush=True)
+    bot = OctoBot().fit(pairs, vocab_size=VOCAB)
+    print("\n" + "=" * 70 + "\nANSWERS\n" + "=" * 70, flush=True)
+    for q in PROMPTS:
+        print("\nPROMPT  : " + q, flush=True)
+        print("RESPONSE: " + bot.respond(q), flush=True)
