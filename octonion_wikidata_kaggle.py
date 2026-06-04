@@ -226,6 +226,20 @@ def _wikidata_entity(d):
 def _clean(t):
     return t.replace(" @-@ ", "-").replace(" @,@ ", ",").replace(" @.@ ", ".").replace(" @ ", " ")
 
+def _intro(text, n=3, maxwords=90):
+    """First few sentences of an article/abstract -- the definition, not the whole article."""
+    t = _clean(re.sub(r"\s+", " ", str(text))).strip()
+    out = " ".join(re.split(r"(?<=[.!?])\s+", t)[:n]).strip()
+    return " ".join(out.split()[:maxwords])
+
+def _mkpair(label, text):
+    """(label, article/abstract text) -> (search_text, answer_text) using the intro paragraph."""
+    label = re.sub(r"\s+", " ", str(label)).strip()
+    ai = _intro(text)
+    if not ai or len(ai.split()) < 4: return None
+    answer = ai if len(ai.split()) >= 8 else (label + " : " + ai).strip()
+    return ((label + " " + ai).strip(), answer)
+
 def parse_wikitext(text, maxpairs):
     # WikiText: level-1 articles ' = Title = ', sections ' = = X = = '.
     # Build (title, intro-paragraph) pairs from each article's first paragraph.
@@ -304,8 +318,9 @@ def load_data(maxpairs=200000, datadir="/kaggle/input"):
                 if lc and ac and lc != ac:
                     print("  table %s: search=%s answer=%s" % (os.path.basename(f), lc, ac), flush=True)
                     for s, a in zip(df[lc].astype(str), df[ac].astype(str)):
-                        if len(a.split()) >= 2:
-                            pairs.append(((s + " " + a).strip(), (s + " is " + a + ".").strip()))
+                        pr = _mkpair(s, a)
+                        if pr:
+                            pairs.append(pr)
                             if len(pairs) >= maxpairs: break
             elif ext in ("json", "jsonl", "ndjson"):
                 with open(f, encoding="utf-8", errors="ignore") as fh:
@@ -322,7 +337,7 @@ def load_data(maxpairs=200000, datadir="/kaggle/input"):
                         pr = _wikidata_entity(d)
                         if pr is None:
                             s, a = _pick(d, LABELKEYS), _pick(d, ANSWKEYS)
-                            pr = ((s + " " + a).strip(), (s + " is " + a + ".").strip()) if (s and len(a.split()) >= 2) else None
+                            pr = _mkpair(s, a) if (s and a) else None
                         if pr: pairs.append(pr)
                         if len(pairs) >= maxpairs: break
         except Exception as e:
