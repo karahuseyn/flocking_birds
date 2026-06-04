@@ -89,6 +89,7 @@ def toks(text, wi): return [wi[w] for w in re.findall(r"[a-z0-9']+", text.lower(
 
 # ------------------------------------------------------------------------------------ bot
 class OctoBot:
+    _STOP = set("a an the of to in on at for and or but is are was were be been being this that these those it its he she they them his her their what who whom whose when where why how which do does did done can will would should could may might must as with from by about into over under after before than then there here we you i me my your our not no nor yes if so up out off above below again once also more most very just only own same s t".split())
     _ASPECT = set("treated treat treatment prevent prevention cure cured manage diagnosed cause causes caused discover discovered invented born died founded".split())
     _REQUEST = set("should advice help anything what do tell give explain about".split())
     _SEGSTOP = set("im you're dont cant really very much lately always think feel getting going they them their your his her our this that these those coming back been have having from with about who when where which".split())
@@ -124,14 +125,15 @@ class OctoBot:
 
     def _match(self, q, k=40, lex=0.6, wf=3.0):
         pe = self._vec(q); d = self.EPru @ pe; tk = toks(q, self.wi)
-        qt = [t for t in set(tk) if self.idf[t] > 1.0]
+        qt = [t for t in set(tk) if self.idf[t] > 1.0 and self.vocab[t] not in self._STOP]   # content only
         if qt:
             L = np.zeros(len(self.pairs)); tot = 0.0
             for t in qt:
                 w = self.idf[t]; tot += w; p = self.post.get(t)
                 if p is not None: L[p] += w
             d = d + lex * (L / (tot + 1e-9))
-        bg = list(zip(tk, tk[1:]))
+        bg = [(a, b) for a, b in zip(tk, tk[1:])                                              # at least one content word
+              if self.vocab[a] not in self._STOP or self.vocab[b] not in self._STOP]
         if wf and bg:
             B = np.zeros(len(self.pairs))
             for g in bg:
