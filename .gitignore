@@ -20,3 +20,4 @@ lp_out.txt
 arc_data/
 arc_viz.svg
 arc_eval_*.png
+octonion_net.npz
