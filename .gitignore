@@ -16,3 +16,6 @@ questions-words.txt
 mined_big.json
 
 lp_out.txt
+
+arc_data/
+arc_viz.svg
