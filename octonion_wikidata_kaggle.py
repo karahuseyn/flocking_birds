@@ -23,6 +23,12 @@ import os, re, json, math, glob, time
 import numpy as np
 from collections import Counter, defaultdict
 
+# ===================== KAGGLE PARAMETERS (edit these) =====================
+os.environ.setdefault("MAXPAIRS", "400000")   # number of Wikipedia article intros to load
+os.environ.setdefault("VOCAB",    "60000")    # vocabulary size (bigger = bigger model)
+os.environ.setdefault("GENS",     "28")       # so(8) transport generators: 28 (full) or 7 (fast)
+# =========================================================================
+
 def unit(v): return v / (np.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
 
 # ----------------------------------------------------------------------------- octonions
