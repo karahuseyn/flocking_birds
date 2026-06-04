@@ -173,7 +173,9 @@ class OctoBot:
 
     def answer(self, q, k=40, m=3, with_match=False):
         pe, nn = self._match(q, k)
-        lead = re.split(r"(?<=[.!?])\s+", self.pairs[int(nn[0])][1])[0].strip()   # canonical article's definition
+        sents0 = [s.strip() for s in re.split(r"(?<=[.!?])\s+", self.pairs[int(nn[0])][1]) if s.strip()]
+        lead = next((s for s in sents0 if len(s.split()) >= 5 and re.search(r"\b(is|was|are|were|refers)\b", s.lower())),
+                    sents0[0] if sents0 else self.pairs[int(nn[0])][1])   # first definitional sentence (skip captions)
         seen, pool = {lead}, []                                            # additional context from the neighbourhood
         for j in nn:
             for s in re.split(r"(?<=[.!?])\s+", self.pairs[int(j)][1]):
@@ -209,7 +211,7 @@ class OctoBot:
         for text, ct in segs:
             words = [self.vocab[t] for t in ct]
             if all(w in self._REQUEST for w in words): continue
-            query = (gph + " " + text) if all(w in self._ASPECT for w in words) else text
+            query = gph if (gph and all(w in self._ASPECT for w in words)) else text   # aspect clause -> entity only
             ans, match = self.answer(query, m=m, with_match=True)
             if match in used: continue
             used.add(match)
