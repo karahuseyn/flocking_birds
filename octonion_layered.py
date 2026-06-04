@@ -14,6 +14,7 @@ import numpy as np
 from octonion_arc import A, eq, bg_color, crop_bbox, DIHEDRAL
 import octonion_incontext as IC
 import octonion_emergent as EM
+import octonion_refine as RF
 
 # ---------- emergent CLOSERS: (transformed-input -> output) pairs -> grid->grid fn, or None ----------
 def _colormap(pairs):
@@ -41,7 +42,8 @@ def single_step(pairs):
         cm = _colormap(tp)
         if cm is not None and all(eq(cm(d(i)), o) for i, o in pairs):
             return (lambda g, _d=d, _cm=cm: _cm(_d(A(g))))
-    for op in (EM.op_upscale, EM.op_tile, EM.op_crop, EM.op_symfill):  # structural emergent ops
+    for op in (EM.op_upscale, EM.op_tile, EM.op_crop, EM.op_symfill,  # structural emergent ops
+               RF.op_local_rule, RF.op_local_rule_iter):          # lever 3: learned local (CA) rule
         try: fn = op(pairs)
         except Exception: fn = None
         if fn is not None: return fn
