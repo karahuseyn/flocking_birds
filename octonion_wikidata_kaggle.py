@@ -115,12 +115,15 @@ class OctoBot:
         EAr = np.array([self._vec(a) for _, a in pairs])
         self.Xtr, self.Ttr = slots(self.EPr), slots(EAr)
         post = defaultdict(list); bpost = defaultdict(list); tpost = defaultdict(list)
+        self.tidf = np.zeros(N)                                            # sum of title-token idf per article
         for i, (title, _) in enumerate(pairs):
             tk = toks(search[i], self.wi)
             for t in set(tk):
                 if self.idf[t] > 1.0: post[t].append(i)
             for a, b in zip(tk, tk[1:]): bpost[(a, b)].append(i)
-            for t in set(toks(title, self.wi)): tpost[t].append(i)        # TITLE tokens (for title boost)
+            ttok = set(toks(title, self.wi))
+            for t in ttok: tpost[t].append(i)                             # TITLE tokens (for title boost)
+            self.tidf[i] = sum(self.idf[t] for t in ttok)
         self.post = {t: np.array(v) for t, v in post.items()}
         self.bpost = {g: np.array(v) for g, v in bpost.items()}
         self.tpost = {t: np.array(v) for t, v in tpost.items()}
@@ -143,7 +146,9 @@ class OctoBot:
                 if p is not None: L[p] += w
                 tp = self.tpost.get(t)
                 if tp is not None: Tb[tp] += w                                     # title-token hit
-            d = d + lex * (L / (tot + 1e-9)) + wt * (Tb / (tot + 1e-9))            # boost the canonical-title article
+            # title boost by COVERAGE: Tb/tidf is 1.0 when the query covers the whole title
+            # (exact entity, e.g. 'Albert Einstein') and small for 'Albert Einstein College ...'
+            d = d + lex * (L / (tot + 1e-9)) + wt * (Tb / (self.tidf + 1e-9))
         bg = [(a, b) for a, b in zip(tk, tk[1:])                                              # at least one content word
               if self.vocab[a] not in self._STOP or self.vocab[b] not in self._STOP]
         if wf and bg:
@@ -168,24 +173,22 @@ class OctoBot:
 
     def answer(self, q, k=40, m=3, with_match=False):
         pe, nn = self._match(q, k)
-        F = fit_slot(self.Xtr[nn], self.Ttr[nn], 10)
-        g = unit(apply_slot(F, slots(pe[None]))[0].reshape(-1))            # SO(8) answer-region anchor
-        seen, pool, src = set(), [], []
-        for rank, j in enumerate(nn):
+        lead = re.split(r"(?<=[.!?])\s+", self.pairs[int(nn[0])][1])[0].strip()   # canonical article's definition
+        seen, pool = {lead}, []                                            # additional context from the neighbourhood
+        for j in nn:
             for s in re.split(r"(?<=[.!?])\s+", self.pairs[int(j)][1]):
                 s = s.strip()
-                if len(s.split()) >= 3 and s not in seen: seen.add(s); pool.append(s); src.append(rank)
-        if not pool:
-            best = self.pairs[int(nn[0])][1]
-            return (best, self.pairs[int(nn[0])][0]) if with_match else best
-        cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0); src = np.array(src, float)
-        keep = qs >= 0.40 * qs.max()                                       # keep only on-topic facts
-        if keep.any():
-            ix = np.where(keep)[0]; pool = [pool[i] for i in ix]; cv, qs, src = cv[keep], qs[keep], src[keep]
-        sb = 1.0 - src / max(1, len(nn))                                   # prefer the top-matched (canonical) article
-        m_eff = max(1, min(m, len(pool)))
-        idx = self._mmr(cv, 0.5 * qs + 0.2 * (cv @ g) + 0.1 * (cv @ cen) + 0.4 * sb, m_eff)
-        ans = " ".join(pool[i] for i in idx)
+                if len(s.split()) >= 3 and s not in seen: seen.add(s); pool.append(s)
+        extras = []
+        if pool and m > 1:
+            F = fit_slot(self.Xtr[nn], self.Ttr[nn], 10)
+            g = unit(apply_slot(F, slots(pe[None]))[0].reshape(-1))        # SO(8) answer-region anchor
+            cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0)
+            keep = qs >= 0.55 * qs.max()
+            if keep.any(): ix = np.where(keep)[0]; pool = [pool[i] for i in ix]; cv, qs = cv[keep], qs[keep]
+            idx = self._mmr(cv, 0.6 * qs + 0.25 * (cv @ g) + 0.15 * (cv @ cen), min(m - 1, len(pool)))
+            extras = [pool[i] for i in idx]
+        ans = (lead + " " + " ".join(extras)).strip()
         return (ans, self.pairs[int(nn[0])][0]) if with_match else ans
 
     def _segments(self, prompt):
