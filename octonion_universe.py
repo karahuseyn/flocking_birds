@@ -64,6 +64,23 @@ def relation(cin, cout):
     """The transformation octonion R that carries c_in to c_out: R = c_out (x) c_in^-1."""
     return XF.unit(XF.octo_mul(cout, XF._inv(cin)))
 
+def carrier_deep(grid, max_obj=40):
+    """A DEEPER carrier: two nested holographic levels. Each object's octon is itself the holographic
+    carrier of ITS cells (cell colour bound to fano roles, superposed); the grid carrier is then the
+    holographic carrier of those object-octons. So the encoding recurses -- a carrier of carriers --
+    giving the beam search a structure-aware octonionic heuristic, not just a flat object summary."""
+    g = A(grid); bg = bg_color(g); objs = objects(g, bg, True, False)
+    if not objs: return COLOR_OCTON[bg]
+    objs = objs[:max_obj]
+    cents = [((o["bbox"][0] + o["bbox"][2]) / 2, (o["bbox"][1] + o["bbox"][3]) / 2) for o in objs]
+    acc = np.zeros(8)
+    for k, i in enumerate(tsp_order(cents)):                      # level 2: bind object carriers
+        o = objs[i]; rr, cc = np.where(o["mask"]); cols = g[rr, cc].astype(int)
+        roles = ROLE[np.arange(len(cols)) % 7]                    # level 1: bind this object's cells
+        oc = XF.unit(XF.octo_mul(roles, COLOR_OCTON[cols % len(COLOR_OCTON)]).sum(0))
+        acc = acc + XF.octo_mul(ROLE[k % 7], oc)
+    return XF.unit(acc)
+
 
 class Universe:
     """The carrier set: every training task contributes one transformation octonion R. A new task's

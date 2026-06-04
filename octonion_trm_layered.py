@@ -18,13 +18,13 @@
 # shortest such pipeline wins (Occam). No gradients, no backprop.
 import json, time, numpy as np
 import exp_fano_layer as XF
-from octonion_arc import A, eq, bg_color, crop_bbox, DIHEDRAL
+from octonion_arc import A, eq, bg_color, crop_bbox, DIHEDRAL, objects
 from octonion_object_trm import _gravity_step, solve as flat_solve
-from octonion_universe import carrier
+from octonion_universe import carrier_deep
 from octonion_arc_phys import COLOR_OCTON
 
-# ---- parameter-free primitives; each layer is applied as a whole. The gravity layers are themselves
-# fixed-point RECURSIONS, so a pipeline is a recursion-of-recursions (the deeper TRM structure). ----
+# ---- parameter-free primitives; each layer is applied as a whole. The gravity / symmetry layers are
+# themselves fixed-point RECURSIONS, so a pipeline is a recursion-of-recursions (the deeper TRM). ----
 def _grav(d):
     dr, dc = d
     def fn(g):
@@ -35,10 +35,42 @@ def _grav(d):
             g = ng
         return g
     return fn
+
+def _symmetrize(g):                                              # fill bg cells from the grid's own mirrors
+    g = A(g); bg = bg_color(g)
+    for _ in range(4):
+        ng = g.copy()
+        for f in (np.fliplr, np.flipud):
+            m = f(ng); ng = np.where(ng == bg, m, ng)
+        if np.array_equal(ng, g): break
+        g = ng
+    return g
+
+def _keep(which):
+    def fn(g):
+        g = A(g); bg = bg_color(g); objs = objects(g, bg, True, False)
+        if not objs: return g
+        o = (max if which == "largest" else min)(objs, key=lambda o: o["size"])
+        out = np.full_like(g, bg); rr, cc = np.where(o["mask"]); out[rr, cc] = g[rr, cc]; return out
+    return fn
+
+def _tile(ry, rx, mir):                                         # repeat the grid (optionally mirrored)
+    def fn(g):
+        g = A(g); row = g
+        if rx == 2: row = np.concatenate([g, (np.fliplr(g) if mir else g)], 1)
+        col = row
+        if ry == 2: col = np.concatenate([row, (np.flipud(row) if mir else row)], 0)
+        return col
+    return fn
+
 PRIMS = ([("grav_down", _grav((1, 0))), ("grav_up", _grav((-1, 0))),
           ("grav_left", _grav((0, -1))), ("grav_right", _grav((0, 1))),
-          ("crop", lambda g: crop_bbox(A(g)))]
+          ("crop", lambda g: crop_bbox(A(g))), ("symmetrize", _symmetrize),
+          ("keep_largest", _keep("largest")), ("keep_smallest", _keep("smallest")),
+          ("tile_h", _tile(1, 2, 0)), ("tile_v", _tile(2, 1, 0)), ("tile_2x2", _tile(2, 2, 0)),
+          ("mirror_h", _tile(1, 2, 1)), ("mirror_v", _tile(2, 1, 1)), ("mirror_2x2", _tile(2, 2, 1))]
          + [(n, (lambda g, _f=f: A(_f(A(g))))) for n, f in DIHEDRAL.items() if n != "identity"])
+PRIM = dict(PRIMS)
 
 def octo_recolour(states, outs):
     """A closing colour LAYER: per-colour relation octon R_c = o_out (x) o_in^-1 fit jointly on the
@@ -58,34 +90,46 @@ def octo_recolour(states, outs):
         return out
     return fn
 
-def _carr(g):
-    try: return carrier(g)
-    except Exception: return np.zeros(8)
+def _sig(g):
+    """A DEEPER octonionic signature: (1) the nested carrier-of-carriers (structure), (2) a colour-mass
+    octon. The beam scores a branch by both channels -- a structure-aware, gradient-free heuristic."""
+    g = A(g)
+    try: c1 = carrier_deep(g)
+    except Exception: c1 = np.zeros(8)
+    vals, cnts = np.unique(g, return_counts=True)
+    c2 = XF.unit((cnts[:, None] * COLOR_OCTON[vals % len(COLOR_OCTON)]).sum(0))
+    return c1, c2
 
-def layered_solve(train, maxdepth=3, beam=6):
-    """Octonion-guided beam search over primitive pipelines; closing octonionic recolour layer.
-    Returns (fn, depth, ops) or None. Accept = exact on every train pair; shortest pipeline first."""
+def _score(sig, tgt):
+    return 0.65 * float(sig[0] @ tgt[0]) + 0.35 * float(sig[1] @ tgt[1])
+
+def _key(cur): return tuple(c.tobytes() + bytes(c.shape) for c in cur)
+
+def layered_solve(train, maxdepth=4, beam=10):
+    """Octonion-guided beam search over primitive pipelines; closing octonionic recolour layer. Deeper
+    (maxdepth 4, beam 10), the deep carrier-of-carriers as heuristic, with visited-dedup to keep the
+    larger search tractable. Returns (fn, depth, ops); accept = exact on every train pair, shortest first."""
     pairs = [(A(p["input"]), A(p["output"])) for p in train]
     if len(pairs) < 2: return None
     ins = [i for i, _ in pairs]; outs = [o for _, o in pairs]
-    tgt = [_carr(o) for o in outs]
+    if any(max(o.shape) > 30 for o in outs): omax = 30
+    else: omax = max(max(o.shape) for o in outs)
+    tgt = [_sig(o) for o in outs]
     def accept(ops, cur):
-        if all(eq(c, o) for c, o in zip(cur, outs)):
-            return _mk(ops, None), len(ops)
-        rc = octo_recolour(cur, outs)                                # closing colour layer
-        if rc is not None and all(eq(rc(c), o) for c, o in zip(cur, outs)):
-            return _mk(ops, rc), len(ops) + 1
+        if all(eq(c, o) for c, o in zip(cur, outs)): return _mk(ops, None), len(ops)
+        rc = octo_recolour(cur, outs)                               # closing colour layer
+        if rc is not None and all(eq(rc(c), o) for c, o in zip(cur, outs)): return _mk(ops, rc), len(ops) + 1
         return None
     def _mk(ops, rc):
-        fns = [dict(PRIMS)[n] for n in ops]
+        fns = [PRIM[n] for n in ops]
         def fn(g):
             g = A(g)
             for f in fns: g = f(g)
             return rc(g) if rc is not None else g
         return fn
-    frontier = [([], ins)]; best = None
+    frontier = [([], ins)]; visited = {_key(ins)}; best = None
     for depth in range(maxdepth + 1):
-        for ops, cur in frontier:                                   # try to close at current depth
+        for ops, cur in frontier:                                   # try to close at this depth
             a = accept(ops, cur)
             if a is not None and (best is None or a[1] < best[1]): best = (a[0], a[1], ops)
         if best is not None: return best                            # shortest pipeline -> stop
@@ -93,9 +137,14 @@ def layered_solve(train, maxdepth=3, beam=6):
         for ops, cur in frontier:
             for name, fn in PRIMS:
                 if ops and ops[-1] == name: continue                # a fixed point is idempotent
-                ncur = [fn(c) for c in cur]
-                score = np.mean([float(_carr(nc) @ t) for nc, t in zip(ncur, tgt)])   # octonionic heuristic
-                scored.append((score, ops + [name], ncur))
+                try: ncur = [A(fn(c)) for c in cur]
+                except Exception: continue
+                if any(max(nc.shape) > omax + 2 for nc in ncur): continue   # cannot reach a <=30 output
+                k = _key(ncur)
+                if k in visited: continue                           # dedup states (avoids dihedral cycles)
+                visited.add(k)
+                scored.append((np.mean([_score(_sig(nc), t) for nc, t in zip(ncur, tgt)]), ops + [name], ncur))
+        if not scored: return None
         scored.sort(key=lambda x: -x[0]); frontier = [(o, c) for _, o, c in scored[:beam]]
     return None
 
