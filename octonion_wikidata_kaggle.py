@@ -379,6 +379,11 @@ if __name__ == "__main__":
         print("No usable dataset found under /kaggle/input -- running on a tiny built-in DEMO.", flush=True)
         pairs = DEMO
     print("loaded %d pairs in %.0fs" % (len(pairs), time.time()-t0), flush=True)
+    import random
+    sample = random.sample(pairs, min(15, len(pairs)))
+    print("SAMPLE ENTITIES in this dataset (ask about these!):", flush=True)
+    for p, _ in sample:
+        print("   - " + " ".join(p.split()[:6]), flush=True)
     bot = OctoBot().fit(pairs, vocab_size=VOCAB)
     print("\n" + "=" * 70 + "\nANSWERS\n" + "=" * 70, flush=True)
     for q in PROMPTS:
