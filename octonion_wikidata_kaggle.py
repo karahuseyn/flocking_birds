@@ -101,26 +101,29 @@ class OctoBot:
     _SEGSTOP = set("im you're dont cant really very much lately always think feel getting going they them their your his her our this that these those coming back been have having from with about who when where which".split())
 
     def fit(self, pairs, vocab_size=40000, dim=96, verbose=True):
-        t0 = time.time(); self.pairs = pairs
-        words = re.findall(r"[a-z0-9']+", (" \n ".join(p + " " + a for p, a in pairs)).lower())
+        t0 = time.time(); self.pairs = pairs                              # pairs = (TITLE, answer-intro)
+        search = [t + " " + a for t, a in pairs]                          # match against title + intro
+        words = re.findall(r"[a-z0-9']+", (" \n ".join(search)).lower())
         self.vocab, self.wi, self.emb = build_embeddings(words, vocab_size, dim, verbose=verbose)
         self.octo = unit(self.emb[:, 1:9])
         df = Counter()
-        for p, a in pairs:
-            for t in set(toks(p + " " + a, self.wi)): df[t] += 1
+        for s in search:
+            for t in set(toks(s, self.wi)): df[t] += 1
         N = len(pairs); self.idf = np.ones(len(self.vocab))
         for t, c in df.items(): self.idf[t] = math.log((N + 1) / (c + 1)) + 1.0
-        self.EPr = np.array([self._vec(p) for p, _ in pairs]); self.EPru = unit(self.EPr)
+        self.EPr = np.array([self._vec(s) for s in search]); self.EPru = unit(self.EPr)
         EAr = np.array([self._vec(a) for _, a in pairs])
         self.Xtr, self.Ttr = slots(self.EPr), slots(EAr)
-        post = defaultdict(list); bpost = defaultdict(list)
-        for i, (p, _) in enumerate(pairs):
-            tk = toks(p, self.wi)
+        post = defaultdict(list); bpost = defaultdict(list); tpost = defaultdict(list)
+        for i, (title, _) in enumerate(pairs):
+            tk = toks(search[i], self.wi)
             for t in set(tk):
                 if self.idf[t] > 1.0: post[t].append(i)
             for a, b in zip(tk, tk[1:]): bpost[(a, b)].append(i)
+            for t in set(toks(title, self.wi)): tpost[t].append(i)        # TITLE tokens (for title boost)
         self.post = {t: np.array(v) for t, v in post.items()}
         self.bpost = {g: np.array(v) for g, v in bpost.items()}
+        self.tpost = {t: np.array(v) for t, v in tpost.items()}
         if verbose: print("  bot ready in %.0fs (pairs=%d vocab=%d gens=%d)" % (time.time()-t0, N, len(self.vocab), len(GEN_IDX)), flush=True)
         return self
 
@@ -129,15 +132,18 @@ class OctoBot:
         if not t: return np.zeros(self.emb.shape[1])
         return unit((self.emb[t] * self.idf[t][:, None]).sum(0))
 
-    def _match(self, q, k=40, lex=0.6, wf=3.0):
+    def _match(self, q, k=40, lex=0.6, wf=3.0, wt=5.0):
         pe = self._vec(q); d = self.EPru @ pe; tk = toks(q, self.wi)
         qt = [t for t in set(tk) if self.idf[t] > 1.0 and self.vocab[t] not in self._STOP]   # content only
         if qt:
-            L = np.zeros(len(self.pairs)); tot = 0.0
+            L = np.zeros(len(self.pairs)); Tb = np.zeros(len(self.pairs)); tot = 0.0
             for t in qt:
-                w = self.idf[t]; tot += w; p = self.post.get(t)
+                w = self.idf[t]; tot += w
+                p = self.post.get(t)
                 if p is not None: L[p] += w
-            d = d + lex * (L / (tot + 1e-9))
+                tp = self.tpost.get(t)
+                if tp is not None: Tb[tp] += w                                     # title-token hit
+            d = d + lex * (L / (tot + 1e-9)) + wt * (Tb / (tot + 1e-9))            # boost the canonical-title article
         bg = [(a, b) for a, b in zip(tk, tk[1:])                                              # at least one content word
               if self.vocab[a] not in self._STOP or self.vocab[b] not in self._STOP]
         if wf and bg:
@@ -164,19 +170,21 @@ class OctoBot:
         pe, nn = self._match(q, k)
         F = fit_slot(self.Xtr[nn], self.Ttr[nn], 10)
         g = unit(apply_slot(F, slots(pe[None]))[0].reshape(-1))            # SO(8) answer-region anchor
-        seen, pool = set(), []
-        for j in nn:
+        seen, pool, src = set(), [], []
+        for rank, j in enumerate(nn):
             for s in re.split(r"(?<=[.!?])\s+", self.pairs[int(j)][1]):
                 s = s.strip()
-                if len(s.split()) >= 3 and s not in seen: seen.add(s); pool.append(s)
+                if len(s.split()) >= 3 and s not in seen: seen.add(s); pool.append(s); src.append(rank)
         if not pool:
             best = self.pairs[int(nn[0])][1]
             return (best, self.pairs[int(nn[0])][0]) if with_match else best
-        cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0)
+        cv = unit(np.array([self._vec(s) for s in pool])); qs = cv @ pe; cen = cv.mean(0); src = np.array(src, float)
         keep = qs >= 0.40 * qs.max()                                       # keep only on-topic facts
-        if keep.any(): pool = [pool[i] for i in np.where(keep)[0]]; cv, qs = cv[keep], qs[keep]
-        m_eff = max(1, min(m, len(pool)))                                  # adaptive: as many as are on-topic
-        idx = self._mmr(cv, 0.6 * qs + 0.25 * (cv @ g) + 0.15 * (cv @ cen), m_eff)
+        if keep.any():
+            ix = np.where(keep)[0]; pool = [pool[i] for i in ix]; cv, qs, src = cv[keep], qs[keep], src[keep]
+        sb = 1.0 - src / max(1, len(nn))                                   # prefer the top-matched (canonical) article
+        m_eff = max(1, min(m, len(pool)))
+        idx = self._mmr(cv, 0.5 * qs + 0.2 * (cv @ g) + 0.1 * (cv @ cen) + 0.4 * sb, m_eff)
         ans = " ".join(pool[i] for i in idx)
         return (ans, self.pairs[int(nn[0])][0]) if with_match else ans
 
@@ -226,10 +234,17 @@ def _wikidata_entity(d):
     al = ((d.get("aliases") or {}).get("en") or [])
     alias = " ".join(a.get("value", "") for a in al[:5]) if isinstance(al, list) else ""
     if not lab or not desc: return None
-    return ((lab + " " + alias + " " + desc).strip(), (lab + " is " + desc + ".").strip())
+    return (lab, (lab + " is " + desc + ".").strip())          # (title, answer)
 
 # ---- raw text (WikiText / Wikipedia): title -> intro paragraph, or paragraph retrieval ----
 def _clean(t):
+    t = str(t)
+    t = re.sub(r"\{\{[^{}]*\}\}", " ", t)                       # {{templates}}
+    t = re.sub(r"<ref[^>]*>.*?</ref>", " ", t, flags=re.S)      # <ref>...</ref>
+    t = re.sub(r"<[^>]+>", " ", t)                              # html tags
+    t = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", t)     # [[link|text]] -> text
+    t = t.replace("'''", "").replace("''", "")                  # bold / italic
+    t = re.sub(r"=+", " ", t).replace("&nbsp;", " ").replace("&amp;", "&")
     return t.replace(" @-@ ", "-").replace(" @,@ ", ",").replace(" @.@ ", ".").replace(" @ ", " ")
 
 def _intro(text, n=3, maxwords=90):
@@ -239,12 +254,12 @@ def _intro(text, n=3, maxwords=90):
     return " ".join(out.split()[:maxwords])
 
 def _mkpair(label, text):
-    """(label, article/abstract text) -> (search_text, answer_text) using the intro paragraph."""
-    label = re.sub(r"\s+", " ", str(label)).strip()
-    ai = _intro(text)
-    if not ai or len(ai.split()) < 4: return None
-    answer = ai if len(ai.split()) >= 8 else (label + " : " + ai).strip()
-    return ((label + " " + ai).strip(), answer)
+    """(label, article/abstract text) -> (TITLE, answer-intro), dropping disambiguation pages."""
+    label = re.sub(r"\s+", " ", _clean(label)).strip()
+    ai = _intro(text); low = ai.lower()
+    if not label or not ai or len(ai.split()) < 4: return None
+    if "may refer to" in low or "may also refer" in low or "disambiguation" in low: return None
+    return (label, ai)
 
 def parse_wikitext(text, maxpairs):
     # WikiText: level-1 articles ' = Title = ', sections ' = = X = = '.
@@ -258,7 +273,7 @@ def parse_wikitext(text, maxpairs):
         body = re.split(r"(?m)^ ?= = ", body)[0]                      # cut at first section
         intro = " ".join(re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", body).strip())[:3]).strip()
         if title and 1 <= len(title.split()) <= 8 and len(intro.split()) >= 6:
-            pairs.append(((title + " " + intro).strip(), (title + " : " + intro).strip()))
+            pairs.append((title, intro))                       # (title, answer)
         if len(pairs) >= maxpairs: break
     return pairs
 
@@ -267,7 +282,7 @@ def parse_paragraphs(text, maxpairs):
     for para in re.split(r"\n\s*\n", text):
         para = re.sub(r"\s+", " ", para).strip()
         if len(para.split()) >= 8 and not para.startswith("="):
-            pairs.append((para, para))
+            pairs.append((" ".join(para.split()[:6]), para))   # (pseudo-title, paragraph)
         if len(pairs) >= maxpairs: break
     return pairs
 
@@ -406,12 +421,12 @@ def load_data(maxpairs=200000, datadir="/kaggle/input"):
         print("  -> %d pairs. sample: PROMPT=%r ANSWER=%r" % (len(out), out[0][0][:70], out[0][1][:70]), flush=True)
     return out[:maxpairs]
 
-DEMO = [("Paris capital of France", "Paris is the capital and most populous city of France."),
-        ("Albert Einstein theoretical physicist", "Albert Einstein was a German-born theoretical physicist who developed the theory of relativity."),
-        ("photosynthesis", "Photosynthesis is the process by which plants convert light energy into chemical energy."),
-        ("black hole", "A black hole is a region of spacetime where gravity is so strong that nothing can escape."),
-        ("DNA deoxyribonucleic acid", "DNA is the molecule that carries the genetic instructions for life."),
-        ("Mona Lisa Leonardo da Vinci", "The Mona Lisa is a portrait painting by Leonardo da Vinci.")]
+DEMO = [("Paris", "Paris is the capital and most populous city of France."),
+        ("Albert Einstein", "Albert Einstein was a German-born theoretical physicist who developed the theory of relativity."),
+        ("Photosynthesis", "Photosynthesis is the process by which plants convert light energy into chemical energy."),
+        ("Black hole", "A black hole is a region of spacetime where gravity is so strong that nothing can escape."),
+        ("DNA", "DNA is the molecule that carries the genetic instructions for life."),
+        ("Mona Lisa", "The Mona Lisa is a portrait painting by Leonardo da Vinci.")]
 
 PROMPTS = [
     "what is the capital of france?",
