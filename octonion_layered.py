@@ -5,6 +5,10 @@
 # closer; the search is a depth-bounded DFS (iterative deepening) with state memoisation. This lifts
 # the single-operator ceiling to compositions like crop->tile, dihedral->recolour, upscale->symfill.
 # No gradients, no backprop -- verification across every demonstration is the only learning signal.
+# Measured (training): depth 0 = 40/1000, depth 2 = 53/1000 (composition adds +13: crop->tile,
+# dihedral->recolour, upscale->symfill, ...). Best purely-emergent result, beating the hand-built
+# operator bank (31). ARC-2 evaluation: 0/120 -- the wall holds even with composition; those tasks
+# need reasoning beyond chains of closed-form operators.
 import json, time
 import numpy as np
 from octonion_arc import A, eq, bg_color, crop_bbox, DIHEDRAL
