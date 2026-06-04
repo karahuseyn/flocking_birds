@@ -300,13 +300,45 @@ def read_raw_text(f, cap=150_000_000):
         print("  raw-read skip %s (%s)" % (os.path.basename(f), e), flush=True)
     return None
 
+def load_sqlite(f, maxpairs):
+    """Stream a SQLite Wikipedia DB (e.g. enwiki: articles(article_title, section_text, ...)).
+    Takes the FIRST section per article (the lead/intro) -> (title, intro). Never loads the
+    whole 20GB file: it streams rows with a cursor and stops at maxpairs."""
+    import sqlite3
+    con = sqlite3.connect("file:%s?mode=ro" % f, uri=True); cur = con.cursor()
+    pairs = []
+    try:
+        tabs = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        for tab in tabs:
+            cols = [r[1] for r in cur.execute("PRAGMA table_info(%s)" % tab)]
+            tl = next((c for c in cols if "title" in c.lower() or c.lower() in ("name", "entity")), None)
+            tx = next((c for c in cols if "text" in c.lower() or c.lower() in ("content", "abstract", "section_text")), None)
+            if not tl or not tx: continue
+            print("  sqlite %s.%s: title=%s text=%s" % (os.path.basename(f), tab, tl, tx), flush=True)
+            seen = set()
+            for title, text in cur.execute("SELECT %s, %s FROM %s" % (tl, tx, tab)):
+                if not title or title in seen: continue          # first section per article = lead
+                seen.add(title); pr = _mkpair(title, text)
+                if pr: pairs.append(pr)
+                if len(pairs) >= maxpairs: break
+            if pairs: break
+    except Exception as e:
+        print("  sqlite skip %s (%s)" % (os.path.basename(f), e), flush=True)
+    con.close(); return pairs
+
 def load_data(maxpairs=200000, datadir="/kaggle/input"):
     allf = [f for f in glob.glob(os.path.join(datadir, "**", "*"), recursive=True) if os.path.isfile(f)]
     files = [f for f in allf if not _is_junk(f)]
     print("found %d files (%d after dropping vocab/config/tokenizer junk)" % (len(allf), len(files)), flush=True)
     pairs = []
+    # 0) SQLite Wikipedia DB (streamed, stops at maxpairs -- never loads the whole file)
+    for f in files:
+        if f.lower().endswith((".db", ".sqlite", ".sqlite3")):
+            print("  SQLite DB: %s (streaming first %d article intros)" % (os.path.basename(f), maxpairs), flush=True)
+            pairs = load_sqlite(f, maxpairs)
+            if pairs: break
     # 1) STRUCTURED: csv/tsv/parquet with label+answer columns, or json/jsonl Wikidata entities
-    for f in sorted(files, key=os.path.getsize, reverse=True):
+    for f in (sorted(files, key=os.path.getsize, reverse=True) if not pairs else []):
         ext = f.lower().rsplit(".", 1)[-1]
         try:
             if ext in ("csv", "tsv", "parquet"):
