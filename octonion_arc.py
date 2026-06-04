@@ -138,6 +138,109 @@ def s_occlusion_extract(train):
 
 SOLVERS = [s_dihedral, s_colormap, s_crop_content, s_scale, s_tile, s_symmetrize, s_occlusion_extract, s_const]
 
+# ---------------------------- OBJECT-CENTRIC layer ----------------------------
+from scipy import ndimage
+_STRUCT = np.ones((3, 3), int)
+
+def objects(g, bg, diag=True, same_color=True):
+    st = _STRUCT if diag else None; objs = []
+    if same_color:
+        for col in np.unique(g):
+            if int(col) == bg: continue
+            lab, n = ndimage.label(g == col, st)
+            for k in range(1, n + 1): objs.append(_mkobj(g, lab == k, int(col)))
+    else:
+        lab, n = ndimage.label(g != bg, st)
+        for k in range(1, n + 1): objs.append(_mkobj(g, lab == k, None))
+    return objs
+
+def _mkobj(g, mask, col):
+    rr = np.where(mask.any(1))[0]; cc = np.where(mask.any(0))[0]
+    r0, r1, c0, c1 = rr.min(), rr.max(), cc.min(), cc.max()
+    sub = g[r0:r1+1, c0:c1+1]; sm = mask[r0:r1+1, c0:c1+1]
+    cols = set(int(x) for x in g[mask].tolist())
+    return dict(mask=mask, bbox=(r0, c0, r1, c1), sub=sub, sm=sm, size=int(mask.sum()),
+                h=sub.shape[0], w=sub.shape[1], color=col, ncolors=len(cols))
+
+def _obj_octon(o):
+    """Each object -> a unit octonion signature (size, shape, colour). Uniqueness / correspondence
+    are then measured by octonion distance -- the octon network at the object level."""
+    f = np.array([o["size"], o["h"], o["w"], o["h"]*o["w"], o["ncolors"],
+                  (o["color"] or 0), o["size"]/(o["h"]*o["w"]+1e-9), 0.0], float)
+    return XF.unit(f)
+
+def _shape_key(o): return o["sm"].tobytes() + bytes(o["sm"].shape)
+
+CRITERIA = {
+    "largest": lambda os, g: max(os, key=lambda o: o["size"]),
+    "smallest": lambda os, g: min(os, key=lambda o: o["size"]),
+    "tallest": lambda os, g: max(os, key=lambda o: o["h"]),
+    "widest": lambda os, g: max(os, key=lambda o: o["w"]),
+    "most_colours": lambda os, g: max(os, key=lambda o: o["ncolors"]),
+    "unique_shape": lambda os, g: _unique(os, _shape_key),
+    "unique_colour": lambda os, g: _unique(os, lambda o: o["color"]),
+    "unique_octon": lambda os, g: _octon_outlier(os),
+}
+def _unique(os, key):
+    from collections import Counter
+    c = Counter(key(o) for o in os); u = [o for o in os if c[key(o)] == 1]
+    return u[0] if len(u) == 1 else None
+def _octon_outlier(os):
+    if len(os) < 3: return None
+    V = XF.unit(np.array([_obj_octon(o) for o in os])); S = V @ V.T
+    i = int(np.argmin(S.sum(1)))                                  # the object least like all others
+    return os[i]
+
+def s_select_object(train):
+    for sc in (True, False):
+        for diag in (True, False):
+            for cname, crit in CRITERIA.items():
+                for masked in (False, True):
+                    def fn(g, sc=sc, diag=diag, crit=crit, masked=masked):
+                        bg = bg_color(g); os = objects(g, bg, diag, sc)
+                        if not os: return None
+                        o = crit(os, g)
+                        if o is None: return None
+                        if not masked: return o["sub"].copy()
+                        out = np.full(o["sub"].shape, bg, int); out[o["sm"]] = o["sub"][o["sm"]]; return out
+                    if _verify(fn, train):
+                        return ("select_%s_%s_%s_m%d" % (cname, sc, diag, masked), fn)
+    return None
+
+def s_keep_object(train):
+    if not all(A(p["input"]).shape == A(p["output"]).shape for p in train): return None
+    for sc in (True, False):
+        for cname, crit in (("largest", CRITERIA["largest"]), ("smallest", CRITERIA["smallest"]),
+                            ("unique_shape", CRITERIA["unique_shape"]), ("unique_octon", CRITERIA["unique_octon"])):
+            for keep in (True, False):
+                def fn(g, sc=sc, crit=crit, keep=keep):
+                    bg = bg_color(g); os = objects(g, bg, True, sc)
+                    if not os: return None
+                    o = crit(os, g)
+                    if o is None: return None
+                    out = g.copy() if keep else np.full(g.shape, bg, int)
+                    if keep:
+                        m = np.ones(g.shape, bool); m[o["mask"]] = False; out[m] = bg
+                    else:
+                        out[o["mask"]] = g[o["mask"]]
+                    return out
+                if _verify(fn, train):
+                    return ("keep_%s_%s_k%d" % (cname, sc, keep), fn)
+    return None
+
+def s_count_line(train):
+    def predict(g):
+        bg = bg_color(g); n = len(objects(g, bg, True, False))
+        cols = [int(c) for c in np.unique(g) if int(c) != bg]
+        col = cols[0] if cols else 1
+        return np.full((1, n), col, int) if n else None
+    for fn in (predict, lambda g: predict(g).T if predict(g) is not None else None):
+        if _verify(fn, train): return ("count_line", fn)
+    return None
+
+SOLVERS += [s_select_object, s_keep_object, s_count_line]
+
+
 # deterministic transforms used for FANO-PATH composition (recursive deepening, gradient-free)
 BASE_DET = list(DIHEDRAL.items()) + [("crop", lambda g: crop_bbox(g)), ("crop0", lambda g: crop_bbox(g, 0))]
 
