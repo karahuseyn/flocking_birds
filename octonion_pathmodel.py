@@ -143,6 +143,39 @@ def _solve1(data, lam=1e-3, prior=None):       # one relation octon r:  o_out = 
     return {c: _ridge(Rmat_batch(X), Y, lam, None if prior is None else prior.get(c))
             for c, (X, Y) in data.items()}
 
+# ------------------------------------------ octonionic KALMAN / RLS path estimator
+# The relation octon r is a hidden state with the linear measurement model
+#     o_out_i = H_i r + noise,   H_i = R(ctx_i)   (the right-multiplication matrix).
+# A Kalman filter is the recursive-Bayes form of the batch ridge solve, and it adds
+# two things ridge cannot give: (i) the POSTERIOR COVARIANCE P -- how well the data
+# pins the path, a principled overfit gate; (ii) optimal FUSION of a base-universe
+# prior, pulling r toward the learned atom ONLY in directions the data leaves
+# unconstrained (large P), never disturbing the data-constrained ones.  Gradient-free.
+def _kalman_path(X, Y, r0, P0, rmeas=2e-2, q=0.0):
+    r = r0.astype(float).copy(); P = P0.astype(float).copy(); I = np.eye(8); Rm = rmeas * I
+    for i in range(len(X)):
+        if q: P = P + q * I                                   # process noise -> tracks a drifting path
+        H = Rmat(X[i])
+        S = H @ P @ H.T + Rm
+        K = P @ H.T @ np.linalg.inv(S)                        # Kalman gain
+        r = r + K @ (Y[i] - H @ r)
+        P = (I - K @ H) @ P
+    return r, P
+
+def _solve_kalman(data, uni=None, p0=10.0, rmeas=2e-2, q=0.0):
+    """Per-colour Kalman estimate of the path, prior-initialised from the base universe
+    (Bayesian fusion).  Returns {c:r} plus {c:trace(P)} as an uncertainty read-out."""
+    paths = {}; unc = {}
+    for c, (X, Y) in data.items():
+        r0 = np.zeros(8); r0[0] = 1.0                          # default prior: identity-ish path
+        if uni is not None:                                   # warm-start from nearest learned atom
+            rb = _ridge(Rmat_batch(X), Y, 1e-2)
+            rb = rb / (np.linalg.norm(rb) + 1e-12)
+            r0 = uni.atoms[int((uni.atoms @ rb).argmax())]
+        r, P = _kalman_path(X, Y, r0, p0 * np.eye(8), rmeas=rmeas, q=q)
+        paths[c] = r; unc[c] = float(np.trace(P))
+    return paths, unc
+
 E0 = np.zeros(8); E0[0] = 1.0
 def _solve2(data, iters=6, lam=1e-3):
     """Two-step Fano walk  o_out = r2 (x) (r1 (x) ctx), fit by ALTERNATING LEAST SQUARES.
@@ -178,14 +211,19 @@ def _apply(g, paths, level, fallback=None):
         out[m] = v
     return decode(out)
 
-def _path_solver(pairs, prior=None):
-    """Search context levels (recolour -> local -> wider local) and path LENGTH
-    (1-step relation octon, then 2-step Fano walk via ALS); accept the first
-    octonionic path that reproduces every demonstration EXACTLY."""
+def _path_solver(pairs, prior=None, uni=None):
+    """Search context levels (recolour -> local -> wider local) and estimator
+    (1-step ridge, 2-step ALS Fano walk, then the octonionic KALMAN path with
+    base-universe prior fusion); accept the first path that reproduces every
+    demonstration EXACTLY."""
     for level in (0, 1, 2):
         data = _collect(pairs, level)
         if data is None: continue
-        for paths in (_solve1(data, prior=prior), _solve2(data)):
+        cands = [_solve1(data, prior=prior), _solve2(data)]
+        if uni is not None:
+            cands.append(_solve_kalman(data, uni)[0])             # Kalman, prior-fused, q=0 (RLS)
+            cands.append(_solve_kalman(data, uni, q=1e-3)[0])     # Kalman with drift (tracks varying r)
+        for paths in cands:
             if all(eq(_apply(i, paths, level), o) for i, o in pairs):
                 return lambda g, P=paths, L=level: _apply(g, P, L)
     return None
@@ -329,11 +367,11 @@ def _run_walk(g, program):
 def solve(task, uni=None):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
     tests = [A(tp["input"]) for tp in task["test"]]
-    # (A) value path on raw pairs (shape-preserving local/relational transforms)
-    fn = _path_solver(pairs)
+    # (A) value path on raw pairs (ridge / ALS / Kalman with base-universe prior fusion)
+    fn = _path_solver(pairs, uni=uni)
     if fn is None and uni is not None:          # base universe as clean-up prior
         p0 = _solve_paths(pairs, 1)
-        if p0: fn = _path_solver(pairs, prior=uni.prior_for(p0))
+        if p0: fn = _path_solver(pairs, prior=uni.prior_for(p0), uni=uni)
     if fn is not None:
         try: return [A(fn(t)) for t in tests]
         except Exception: pass
