@@ -242,6 +242,41 @@ class PathUniverse:
         d = np.load(p); o = cls.__new__(cls)
         o.atoms, o.cnt = d["atoms"], d["cnt"]; o.n = len(o.atoms); return o
 
+# ----------------------- discrete grid-operator: VQ octonionic-context cellular rule
+def _symbols(g, level, uni):
+    """Vector-quantize each cell's Fano-context octon against the learned base
+    universe -> a discrete symbol (the path-universe 'word' for that local context).
+    The relational bond is carried indirectly by WHICH atom the context lands on."""
+    ctx = _context(g, level).reshape(-1, 8)
+    return (ctx @ uni.atoms.T).argmax(1).reshape(A(g).shape)
+
+def _sym_rule_solver(pairs, uni, levels=(1, 2)):
+    """Fit a discrete cellular operator keyed by (centre colour, context symbol) ->
+    output colour, then by symbol alone.  Un-named (the key is a learned octonionic
+    codeword, the table is fit from the task), gradient-free, accepted only on EXACT
+    reproduction of every demonstration."""
+    if uni is None or not all(i.shape == o.shape for i, o in pairs): return None
+    P = uni.n
+    for level in levels:
+        for keymode in ("c", "cs", "s"):
+            table = {}; ok = True
+            for gi, go in pairs:
+                S = _symbols(gi, level, uni); gi_ = A(gi).ravel(); go_ = A(go).ravel()
+                k = gi_ if keymode == "c" else (gi_ * P + S.ravel() if keymode == "cs" else S.ravel())
+                for kk, o in zip(k, go_):
+                    kk = int(kk)
+                    if table.get(kk, int(o)) != int(o): ok = False; break
+                    table[kk] = int(o)
+                if not ok: break
+            if not ok: continue
+            def fn(g, table=table, level=level, keymode=keymode):
+                g = A(g); S = _symbols(g, level, uni)
+                k = g.ravel() if keymode == "c" else ((g.ravel() * P + S.ravel()) if keymode == "cs" else S.ravel())
+                out = np.array([table.get(int(kk), int(c)) for kk, c in zip(k, g.ravel())])
+                return out.reshape(g.shape)
+            if all(eq(fn(i), o) for i, o in pairs): return fn
+    return None
+
 # ------------------------------------------- discrete walk through the path universe
 def _apply_atom(g, r, level):
     """One discrete path step: push the grid through atom r at a context level and
@@ -316,6 +351,11 @@ def solve(task, uni=None):
             if fn2 is not None:
                 try: return [A(fn2(warp(t))) for t in tests]
                 except Exception: pass
+    # (D) discrete grid-operator: VQ octonionic-context cellular rule (learned, un-named)
+    fn = _sym_rule_solver(pairs, uni)
+    if fn is not None:
+        try: return [A(fn(t)) for t in tests]
+        except Exception: pass
     # (C) discrete walk through the learned path universe (shared program, beam search)
     prog = _walk_solver(pairs, uni)
     if prog is not None:
