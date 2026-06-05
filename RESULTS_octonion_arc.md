@@ -69,3 +69,33 @@ So the best ARC router is the small, bio-regularised net WITHOUT grid/place (26)
 + Dale inhibition + lateral inhibition help ARC (26 vs 23 no-bio); grid/place and raw scale do not.
 The 3 bio-specific novel solves (1e0a9b12, 3906de3d, 496994bd) are robust across every bio net. ARC
 eval stays 0/120 throughout — a finite routed library cannot reach the evaluation set's abstractions.
+
+## Parametric-emergent bio net — NO predefined task-transforms anywhere (octonion_paramnet)
+
+The earlier OctoNet routers still classified each task into one of 28 *named* ops (a predefined
+bank). To remove that entirely, octonion_paramnet.py feeds the bio gradient-free codebook a broad,
+diverse stream of PARAMETRIC transforms sampled from four general families — affine (dihedral ∘
+integer-scale), colour (random bijection), local (random 3×3 cellular rule), and affine+colour
+compositions — with **no named op ever in the loop**. 2048 bio-encoded nodes, ~4M parametric
+samples, online competitive (VQ) learning, no gradients/backprop. At inference the net only ROUTES a
+task to a family and offers a learned affine parameter PRIOR (muktesebat); the EMERGENT solvers fit
+the actual parameters from the task's own pairs and accept only on EXACT reproduction of all demos.
+
+| ordering of solve() | ARC training | ARC eval | note |
+|---|---|---|---|
+| parametric solvers first, emergent union as fallback | 47 / 1000 | 0 / 120 | **regression** |
+| emergent union first, parametric+prior additive | 62 / 1000 | 0 / 120 | guaranteed ≥ union |
+| parametric+prior alone, on the 938 tasks the union misses | **+0 novel** | — | measured directly |
+
+Two honest findings:
+* **Solver ordering matters and parametric-first regresses (62 → 47).** A parametric fit that
+  reproduces every demonstration but is wrong on the held-out test grid preempts a correct union fit.
+  So the proven emergent union runs first; the bio router's families + learned prior run only on what
+  the union misses.
+* **The parametric+prior path adds 0 novel solves over the union (measured on all 938 misses, 460s).**
+  Its four families (affine / colour / local-CA / composition) are exactly the abstractions the
+  emergent union already fits directly from data, so re-routing to them via a learned codebook
+  recovers nothing new. The paramnet's contribution is architectural — a bio, gradient-free router
+  over diverse *un-named* parametric transforms, satisfying "no predefined transforms" + "diversity,
+  not accuracy" + "no gradient/backprop" simultaneously — not additive ARC coverage. Combined honest
+  total stays **62 / 1000 training, 0 / 120 eval**.
