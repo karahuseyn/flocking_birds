@@ -52,12 +52,20 @@ inhibition. Scaled to 16384 nodes and 16M synthetic.
 |---|---|---|---|---|---|
 | baseline | 4096 | 4M | 0.409 | 22 | 0 |
 | no-bio | 4096 | 8M | 0.379 | 23 | 0 |
-| **bio** | 4096 | 8M | 0.345 | **26** | 0 |
+| **bio (no grid/place)** | 4096 | 8M | 0.345 | **26** | 0 |
+| bio + grid/place | 4096 | 8M | 0.356 | 23 | 0 |
 | big + grid/place | 16384 | 16M | **0.475** | 23 | 0 |
 
-Key finding: **synthetic accuracy and ARC transfer are anti-correlated.** Scaling capacity + data +
-grid/place pushed synthetic accuracy to its highest (0.475) but DROPPED ARC routing to 23 — the
-bigger model overfits the synthetic templates and generalises less to real ARC. The small,
-bio-regularised net (lowest synth 0.345) remains the best ARC router (26). The 3 bio-specific novel
-solves (1e0a9b12, 3906de3d, 496994bd) are robust across both bio nets, so the brain-inspired routing
-contributes genuine, repeatable coverage; raw scale does not. ARC eval stays 0/120 throughout.
+Two findings, isolated by the fixed-capacity control:
+* **synthetic accuracy and ARC transfer are anti-correlated.** Scaling capacity + data + grid/place
+  pushed synthetic accuracy to its highest (0.475) but ARC routing dropped to 23 — the bigger model
+  overfits the synthetic templates.
+* **grid/place cells HURT this task** even at fixed 4096/8M (26 → 23, synth 0.345 → 0.356). Binding
+  "where" into the transform descriptor reduces the positional invariance that transform-matching
+  needs: a flip is a flip wherever it sits, so a position-bound code matches worse across ARC's
+  varied placements. Grid/place are spatial-navigation codes, not position-invariant abstractors.
+
+So the best ARC router is the small, bio-regularised net WITHOUT grid/place (26). The reciprocal I/O
++ Dale inhibition + lateral inhibition help ARC (26 vs 23 no-bio); grid/place and raw scale do not.
+The 3 bio-specific novel solves (1e0a9b12, 3906de3d, 496994bd) are robust across every bio net. ARC
+eval stays 0/120 throughout — a finite routed library cannot reach the evaluation set's abstractions.
