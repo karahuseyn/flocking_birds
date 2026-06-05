@@ -6,6 +6,10 @@
 #   * octonion_grad             -- octonion natural-alignment gradient operator (closed-form optimum)
 # Every solver verifies EXACTLY on all demonstrations before predicting. No backprop anywhere except
 # the closed-form gradient optimum in octonion_grad.
+# Measured grand total: 62/1000 ARC training (no predefined task-transforms; double the hand-built
+# operator bank's 31), 0/120 ARC-2 evaluation. The progression across the whole line of work was
+# 8 -> 36 -> 53 -> 59 -> 62 on training, and 0 on ARC-2 eval at every single stage -- including the
+# final-stage octonion gradient. The eval wall is a structural finding, not a tuning gap.
 import json, time, sys
 from octonion_arc import A, eq
 import octonion_layered as L
