@@ -15,6 +15,8 @@ from octonion_arc import A, eq, DIHEDRAL
 from octonion_net import encode_field, descriptor, FLAT, K, _rand_grid
 import octonion_incontext as IC
 import octonion_refine as RF
+import octonion_layered as L
+import octonion_paths as PA
 
 DIH = list(DIHEDRAL.values())
 FAMS = ["affine", "colour", "local", "affine+colour"]
@@ -121,13 +123,26 @@ def solve(task, net):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
     q = np.mean([descriptor(i, o) for i, o in pairs], 0)
     fams, prior = net.vote(q)
-    cands = [SOLVE[FAMS[c]] for c in fams] + [lambda pr: _prior_affine(pr, prior)]
+    # routed families first, then all remaining families as fallback, then prior
+    seen = list(fams)
+    fallback = [c for c in range(NF) if c not in seen]
+    ordered = seen + fallback
+    prior_fn = lambda pr: _prior_affine(pr, prior)
+    cands = [SOLVE[FAMS[c]] for c in ordered] + [prior_fn]
     for slv in cands:
         try: fn = slv(pairs)
         except Exception: fn = None
         if fn is None: continue
         try: return [A(fn(tp["input"])) for tp in task["test"]], slv
         except Exception: pass
+    # final fallback: full emergent union (layered depth-2 + paths)
+    for mod, arg in ((L, 2), (PA, None)):
+        try:
+            p = mod.solve(task, arg) if arg is not None else mod.solve(task)
+        except Exception:
+            p = None
+        if p is not None:
+            return p, mod
     return None, None
 
 
