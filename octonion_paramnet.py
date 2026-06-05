@@ -121,12 +121,24 @@ SOLVE = {"affine": _affine, "affine+colour": _affine, "colour": _colormap, "loca
 
 def solve(task, net):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
+    # The proven emergent union (layered depth-2 + paths) runs FIRST: it is the strong,
+    # measured 62/1000 path and its solver ordering already favours generalising fits.
+    # Putting the parametric solvers ahead of it regressed to 47 (a verified-on-train but
+    # wrong-on-test parametric fit preempts a correct union fit), so they go LAST as the
+    # additive muktesebat (learned affine prior) on top of the union.
+    for mod, arg in ((L, 2), (PA, None)):
+        try:
+            p = mod.solve(task, arg) if arg is not None else mod.solve(task)
+        except Exception:
+            p = None
+        if p is not None:
+            return p, mod
+    # additive: the bio router's learned families + affine prior (only reached when the
+    # union finds nothing) -- this is where paramnet can contribute NOVEL coverage.
     q = np.mean([descriptor(i, o) for i, o in pairs], 0)
     fams, prior = net.vote(q)
-    # routed families first, then all remaining families as fallback, then prior
     seen = list(fams)
-    fallback = [c for c in range(NF) if c not in seen]
-    ordered = seen + fallback
+    ordered = seen + [c for c in range(NF) if c not in seen]
     prior_fn = lambda pr: _prior_affine(pr, prior)
     cands = [SOLVE[FAMS[c]] for c in ordered] + [prior_fn]
     for slv in cands:
@@ -135,14 +147,6 @@ def solve(task, net):
         if fn is None: continue
         try: return [A(fn(tp["input"])) for tp in task["test"]], slv
         except Exception: pass
-    # final fallback: full emergent union (layered depth-2 + paths)
-    for mod, arg in ((L, 2), (PA, None)):
-        try:
-            p = mod.solve(task, arg) if arg is not None else mod.solve(task)
-        except Exception:
-            p = None
-        if p is not None:
-            return p, mod
     return None, None
 
 
