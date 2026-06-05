@@ -41,3 +41,23 @@ It behaves as a regulariser favouring generalisable transform representations. O
 adds ~+3 to the combined coverage (~65 training). Honest caveats: small, single-run numbers (no seed
 averaging), and ARC evaluation stays 0/120 — a finite routed transform library cannot cover the
 evaluation set's novel abstractions.
+
+### Scaling up + grid/place cells (bigger net, more synthetic)
+
+Added entorhinal GRID cells + hippocampal PLACE cells: each colour octon is octonion-multiplied by a
+position octon (a what⊗where binding), on top of the reciprocal I/O, Dale inhibition and lateral
+inhibition. Scaled to 16384 nodes and 16M synthetic.
+
+| net | nodes | synthetic | synth acc | ARC training | ARC eval |
+|---|---|---|---|---|---|
+| baseline | 4096 | 4M | 0.409 | 22 | 0 |
+| no-bio | 4096 | 8M | 0.379 | 23 | 0 |
+| **bio** | 4096 | 8M | 0.345 | **26** | 0 |
+| big + grid/place | 16384 | 16M | **0.475** | 23 | 0 |
+
+Key finding: **synthetic accuracy and ARC transfer are anti-correlated.** Scaling capacity + data +
+grid/place pushed synthetic accuracy to its highest (0.475) but DROPPED ARC routing to 23 — the
+bigger model overfits the synthetic templates and generalises less to real ARC. The small,
+bio-regularised net (lowest synth 0.345) remains the best ARC router (26). The 3 bio-specific novel
+solves (1e0a9b12, 3906de3d, 496994bd) are robust across both bio nets, so the brain-inspired routing
+contributes genuine, repeatable coverage; raw scale does not. ARC eval stays 0/120 throughout.
