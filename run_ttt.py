@@ -1,4 +1,4 @@
-import json, time, sys, numpy as np
+import json, time, sys, gc, os, numpy as np
 import octonion_ttt as M
 from octonion_arc import A, eq
 
@@ -7,8 +7,16 @@ out = sys.argv[3] if len(sys.argv) > 3 else "/tmp/ttt_%s.prog" % split
 ch = json.load(open("arc_data/arc-agi_%s_challenges.json" % split))
 sol = json.load(open("arc_data/arc-agi_%s_solutions.json" % split))
 items = list(ch.items())[:n] if n else list(ch.items())
-f = open(out, "w"); solved = []; t0 = time.time()
+done = set(); solved = []
+if os.path.exists(out):                                          # RESUME: skip tids already recorded
+    for ln in open(out):
+        p = ln.split()
+        if len(p) >= 3 and "/" in p[0]:
+            done.add(p[1]);
+            if "SOLVED" in ln: solved.append(p[1])
+f = open(out, "a"); t0 = time.time()
 for k, (tid, task) in enumerate(items):
+    if tid in done: continue
     # cell budget: skip pathological sizes to avoid OOM
     allg = [A(p["input"]) for p in task["train"]] + [A(p["output"]) for p in task["train"]] + [A(t["input"]) for t in task["test"]]
     S = min(30, max(max(g.shape) for g in allg)); npairs = len(task["train"])
@@ -21,6 +29,7 @@ for k, (tid, task) in enumerate(items):
         ok = False; p = "ERR:%r" % e
     if ok: solved.append(tid)
     f.write("%d/%d %s %s  cum=%d  %.0fs\n" % (k + 1, len(items), tid, "SOLVED" if ok else "no", len(solved), time.time() - t0)); f.flush()
+    gc.collect()
 f.write("DONE %s: %d/%d solved (%.0fs)  %s\n" % (split, len(solved), len(items), time.time() - t0, " ".join(solved)))
 f.flush(); f.close()
 print("DONE", split, len(solved), "/", len(items))
