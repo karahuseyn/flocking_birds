@@ -124,6 +124,7 @@ bundle. Three pieces of advanced machinery, all gradient-free / no backprop:
 |---|---|---|---|
 | in-context path regression + coordinate path, **no base** | 7 / 1000 | 0 / 120 | **0** |
 | **+ synthetic base universe** (256 atoms, 200k transforms) | 7 / 1000 | 0 / 120 | **0** |
+| **+ 2-step Fano walk** (ALS, `o_out = r2 ⊗ (r1 ⊗ ctx)`) | 7 / 1000 | 0 / 120 | **0** |
 
 The seven solves (0d3d703e, 25ff71a9, 2dee498d, 9dfd6313, b1948b0a, c8f0f002, d511f180) are colour /
 transpose / scale tasks already inside the union. **Honest finding:** a single continuous relation
@@ -135,3 +136,17 @@ one octon. This is the same wall seen throughout: ARC's transforms are discrete-
 continuous octonionic operator — however elegant the Fano-path formulation — captures a small,
 already-covered slice under exact verification. The model is faithful to the thesis and mathematically
 clean; its measured ceiling is the discrete/continuous mismatch, not the encoding or the training.
+
+**Extending the path to a multi-step walk does not move the ceiling.** A two-step composition
+`o_out = r2 ⊗ (r1 ⊗ ctx)` is bilinear in (r1, r2), so it is fit gradient-free by ALTERNATING LEAST
+SQUARES (each half-step a closed-form normal-equations solve through `R(·)` and `L(·)`). The fit is
+genuine — ALS drives a true 2-step octonion target to ~3e-6 residual versus 0.69 for one step — yet
+ARC coverage stays exactly 7 / 1000, +0 novel. The reason is precise and worth stating: the
+exact-match wall is not about *fitting the training cells* (more steps fit them strictly better); it
+is about *generalising the discrete rule to the held-out test grid*. Extra path length adds capacity
+to interpolate the train cells with a continuous operator, but those extra interpolants are overfits
+that produce non-discrete-consistent outputs on unseen test contexts, so the held-out check rejects
+them. More composition = more variance, not more access to the underlying symbolic function. This is
+the bias–variance / discrete–continuous boundary made concrete: octonionic path composition is a
+powerful continuous regressor, and ARC's transforms are discrete programs — the elegant machinery
+recovers the rotation-like slice and no more, regardless of path length, base size, or synthetic count.
