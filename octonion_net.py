@@ -67,13 +67,35 @@ def _center_surround(field):                                     # (K*K,8) -> co
     cnt[1:] += 1; cnt[:-1] += 1; cnt[:, 1:] += 1; cnt[:, :-1] += 1
     return (F - LAT * nb / cnt).reshape(K * K, 8)
 
+# ---- entorhinal GRID cells + hippocampal PLACE cells -> a position octon per cell ----
+def _pos_features():
+    rr, cc = np.meshgrid(np.arange(K) / K, np.arange(K) / K, indexing="ij")
+    r, c = rr.ravel(), cc.ravel(); feats = []
+    for f in (1., 2., 3.):                                       # grid cells: hexagonal multi-scale periodic code
+        for th in (0., np.pi / 3, 2 * np.pi / 3):
+            ph = 2 * np.pi * f * (r * np.cos(th) + c * np.sin(th)); feats += [np.cos(ph), np.sin(ph)]
+    for cx in (0.2, 0.5, 0.8):                                   # place cells: Gaussian fields tiling the grid
+        for cy in (0.2, 0.5, 0.8):
+            feats.append(np.exp(-((r - cx) ** 2 + (c - cy) ** 2) / (2 * 0.18 ** 2)))
+    return np.stack(feats, 1)                                    # (K*K, F)
+
+if BIO:
+    _PF = _pos_features()
+    _Wp = np.random.default_rng(2024).standard_normal((_PF.shape[1], 8))
+    POS_OCT = XF.unit(_PF @ _Wp)                                 # (K*K,8) unit position octons
+    _Eb = np.eye(8)                                             # right-mult matrices: (colour (x) position) vectorised
+    RPOS = np.stack([np.stack([XF.octo_mul(_Eb[k], POS_OCT[p]) for k in range(8)], 1) for p in range(K * K)])
+
 def encode_field(g, output=False):
-    """KxK grid -> (K*K, 8): every cell is its OWN octonion. With BIO on, three brain-inspired
-    mechanisms reshape the code: (1) reciprocal I/O -- output cells use the octonion CONJUGATE so a
-    cell driven on e_i emits on the reciprocal axis; (2) Dale's-principle inhibitory cells whose
-    excitation is damped/subtracted; (3) lateral inhibition / center-surround contrast."""
+    """KxK grid -> (K*K, 8): every cell is its OWN octonion. With BIO on, brain-inspired mechanisms
+    reshape the code: (0) WHAT-WHERE binding -- the colour octon is octonion-multiplied by a position
+    octon built from entorhinal GRID cells + hippocampal PLACE cells (a spatial code bound to colour);
+    (1) reciprocal I/O -- output cells take the octonion CONJUGATE so a cell driven on e_i emits on the
+    reciprocal axis; (2) Dale's-principle inhibitory cells whose excitation is damped/subtracted;
+    (3) lateral inhibition / center-surround contrast."""
     oct = COLOR_OCTON[_canon(g).ravel() % len(COLOR_OCTON)].astype(np.float64)
     if not BIO: return oct
+    oct = np.einsum("pok,pk->po", RPOS, oct)                     # (0) colour (x) position (grid+place binding)
     if output: oct = oct * _CONJ                                 # (1) reciprocal conjugate I/O
     oct = _center_surround(oct)                                  # (3) lateral inhibition / center-surround
     oct = oct * np.where(INHIB, INHIB_GAIN, 1.0)[:, None]        # (2) inhibitory damping (Dale)

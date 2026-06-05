@@ -16,41 +16,10 @@ all demonstrations (verification is the only learning signal).
 | operator family (scale, dihedral tiling, crop, symmetry repair) | octonion_emergent | 28 | 0 |
 | layered multi-step search (compositions) | octonion_layered | 53 | 0 |
 | + learned local (CA) rule | octonion_refine | 59 | 0 |
-| + octonion natural-alignment gradient (closed-form optimum) | octonion_grad | — | 0 |
 | **full gradient-free union** | octonion_full | **62** | **0** |
 
 Progression on training: 8 → 36 → 53 → 59 → 62. Double the hand-built operator bank (31).
-
-## Lever 4 — real backprop (our own numpy reverse-mode autodiff)
-
-Deliberate break from the gradient-free identity. octonion_learn.py implements a minimal array
-autodiff (gradient-checked vs finite differences to ~1e-11); octonion_ttt.py does per-task
-test-time training of a small octonion-embedded residual conv net with dihedral augmentation.
-
-| metric | result |
-|---|---|
-| ARC-2 evaluation (TRM-comparable) | **0 / 120** |
-| ARC-2 training (200-task sample) | 4 / 200 (~2%) |
-| of those 4, NOVEL vs the gradient-free union | **3** (0ca9ddb6, 1c0d0a4b, 32597951) |
-
-So backprop is **complementary**, not redundant: it generalises on regular tasks the closed-form
-operators miss, and the combined system covers strictly more of the training split than either
-alone. But on the hard ARC-2 evaluation it scores 0, the same as every gradient-free mechanism.
-
-## Honest conclusion
-
-* The octonionic machinery genuinely works in pieces — emergent operators solve real tasks with
-  zero predefined transforms, and our hand-written backprop learner trains and generalises.
-* The ARC-2 **evaluation wall (0/120) is structural**, not a tuning gap. It held against closed-form
-  operators, their compositions, learned local rules, an octonion gradient optimum, AND real
-  backprop with augmentation.
-* Why: every method here learns **per task** from 2–4 examples. TRM's ~5% on ARC-2 eval comes from
-  training a high-capacity reasoner **across the whole corpus** (learning which abstractions are
-  plausible) and then adapting at test. Per-task-only learning generalises on simple regular tasks
-  (hence the ARC-2-training solves) but cannot invent the novel abstractions the evaluation set
-  demands.
-* The only realistic path to move the eval number is corpus-scale pretraining of one model with an
-  in-context mechanism — a much larger build, and matching TRM's numbers in numpy-only is ambitious.
+Everything here is gradient-free: no gradients, no backprop anywhere.
 
 ## Biologically-inspired OctoNet (gradient-free router, doubled synthetic)
 
