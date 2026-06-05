@@ -51,3 +51,24 @@ alone. But on the hard ARC-2 evaluation it scores 0, the same as every gradient-
   demands.
 * The only realistic path to move the eval number is corpus-scale pretraining of one model with an
   in-context mechanism — a much larger build, and matching TRM's numbers in numpy-only is ambitious.
+
+## Biologically-inspired OctoNet (gradient-free router, doubled synthetic)
+
+Back to the gradient-free synthetic-trained OctoNet (no backprop). Doubled the synthetic count to
+8M, kept model size fixed (4096 nodes, K=10), and added three brain-inspired encoding mechanisms
+(octonion_net.py, OCTO_BIO=1): reciprocal conjugate I/O, Dale's-principle inhibitory cells (damped
+excitation), and lateral inhibition / center-surround.
+
+| net | synthetic acc (chance .036) | ARC training routed+verified | ARC eval |
+|---|---|---|---|
+| baseline 4M, no-bio | 0.409 | 22 / 1000 | 0 / 120 |
+| 8M, no-bio | 0.379 | 23 / 1000 | 0 / 120 |
+| **8M, BIO** | **0.345** | **26 / 1000** | 0 / 120 |
+
+Finding: the biologically-inspired encoding **lowered in-distribution synthetic accuracy yet raised
+out-of-distribution ARC transfer** (22 → 23 from doubling data, then 23 → 26 from the bio structure).
+It behaves as a regulariser favouring generalisable transform representations. Of the 26 bio routes,
+3 are NOVEL versus the gradient-free emergent union (1e0a9b12, 3906de3d, 496994bd), so the bio router
+adds ~+3 to the combined coverage (~65 training). Honest caveats: small, single-run numbers (no seed
+averaging), and ARC evaluation stays 0/120 — a finite routed transform library cannot cover the
+evaluation set's novel abstractions.
