@@ -125,6 +125,7 @@ bundle. Three pieces of advanced machinery, all gradient-free / no backprop:
 | in-context path regression + coordinate path, **no base** | 7 / 1000 | 0 / 120 | **0** |
 | **+ synthetic base universe** (256 atoms, 200k transforms) | 7 / 1000 | 0 / 120 | **0** |
 | **+ 2-step Fano walk** (ALS, `o_out = r2 ⊗ (r1 ⊗ ctx)`) | 7 / 1000 | 0 / 120 | **0** |
+| **+ discrete walk** (beam search a shared program over learned atoms) | 7 / 1000 | 0 / 120 | **0** |
 
 The seven solves (0d3d703e, 25ff71a9, 2dee498d, 9dfd6313, b1948b0a, c8f0f002, d511f180) are colour /
 transpose / scale tasks already inside the union. **Honest finding:** a single continuous relation
@@ -150,3 +151,22 @@ them. More composition = more variance, not more access to the underlying symbol
 the bias–variance / discrete–continuous boundary made concrete: octonionic path composition is a
 powerful continuous regressor, and ARC's transforms are discrete programs — the elegant machinery
 recovers the rotation-like slice and no more, regardless of path length, base size, or synthetic count.
+
+**Making the walk itself discrete does not move it either — the bottleneck is the primitive, not the
+composition.** The final escalation replaced continuous composition with a true discrete program
+search: beam-search a SHARED sequence of (learned atom, context level) steps, DECODING to a real grid
+after every step (the discretiser that should stop the continuous overfit), with one program forced to
+fit all demonstrations (the strongest generalization constraint available). It is gradient-free and
+uses no predefined transforms — the alphabet is the synthetic base universe. Result: still 7 / 1000,
++0 novel. Three escalating composition mechanisms — one octon, 2-step ALS, discrete beam walk — land
+on the identical seven already-covered tasks. The conclusion is now sharp and is about the ATOM, not
+the search: the primitive move "one octonion multiply of a Fano-role context, then decode" spans only
+rotation-like maps; composing rotations (continuously or discretely) stays in the rotation-like
+family, which never contained ARC's actual building blocks (object translation, counting, symmetry
+completion, region fill, …). Those are discrete grid *programs*, and that is exactly the alphabet the
+emergent union (octonion_layered / octonion_paths) supplies — which is why the union reaches 62 while
+the octonionic path universe, however mathematically elegant (octonion algebra, Fano-role HRR binding,
+closed-form / ALS / beam search), tops out at the 7-task rotation-like slice it can actually represent.
+The honest takeaway: the universe-of-paths thesis is implementable and clean, but a single-octon path
+step is the wrong primitive for ARC; the leverage is in the discrete grid-program atoms, not in the
+continuous octonionic transport between objects.
