@@ -21,3 +21,7 @@ arc_data/
 arc_viz.svg
 arc_eval_*.png
 octonion_net.npz
+
+# trained OctoNet checkpoints (large build artifacts)
+octonion_net_*.npz
+octonion_net_*.npz.done
