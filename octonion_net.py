@@ -53,13 +53,35 @@ def _canon(g):
     ri = (np.arange(K) * H // K).clip(0, H - 1); ci = (np.arange(K) * W // K).clip(0, W - 1)
     return g[np.ix_(ri, ci)]
 
-def encode_field(g):
-    """KxK grid -> (K*K, 8): every cell is its OWN octonion (resolution preserved, transform visible)."""
-    return COLOR_OCTON[_canon(g).ravel() % len(COLOR_OCTON)]
+# ---- biologically-inspired structure (gradient-free, model size unchanged) ----
+BIO = os.environ.get("OCTO_BIO", "0") == "1"
+_CONJ = np.array([1., -1, -1, -1, -1, -1, -1, -1])               # octonion conjugation: e_i -> -e_i
+_brng = np.random.default_rng(777)
+INHIB = _brng.random(K * K) < 0.20                               # Dale's principle: ~20% inhibitory cells
+INHIB_GAIN = float(os.environ.get("OCTO_INHIB", "-0.5"))         # inhibitory cells DAMP/subtract excitation
+LAT = float(os.environ.get("OCTO_LAT", "0.5"))                   # lateral inhibition (center-surround) strength
+
+def _center_surround(field):                                     # (K*K,8) -> contrast vs 4-neighbour mean
+    F = field.reshape(K, K, 8); nb = np.zeros_like(F); cnt = np.zeros((K, K, 1))
+    nb[1:] += F[:-1]; nb[:-1] += F[1:]; nb[:, 1:] += F[:, :-1]; nb[:, :-1] += F[:, 1:]
+    cnt[1:] += 1; cnt[:-1] += 1; cnt[:, 1:] += 1; cnt[:, :-1] += 1
+    return (F - LAT * nb / cnt).reshape(K * K, 8)
+
+def encode_field(g, output=False):
+    """KxK grid -> (K*K, 8): every cell is its OWN octonion. With BIO on, three brain-inspired
+    mechanisms reshape the code: (1) reciprocal I/O -- output cells use the octonion CONJUGATE so a
+    cell driven on e_i emits on the reciprocal axis; (2) Dale's-principle inhibitory cells whose
+    excitation is damped/subtracted; (3) lateral inhibition / center-surround contrast."""
+    oct = COLOR_OCTON[_canon(g).ravel() % len(COLOR_OCTON)].astype(np.float64)
+    if not BIO: return oct
+    if output: oct = oct * _CONJ                                 # (1) reciprocal conjugate I/O
+    oct = _center_surround(oct)                                  # (3) lateral inhibition / center-surround
+    oct = oct * np.where(INHIB, INHIB_GAIN, 1.0)[:, None]        # (2) inhibitory damping (Dale)
+    return oct
 
 def descriptor(gi, go):
     """A transform example -> D octonions = [input field ; output field], flattened to FLAT for the net."""
-    return np.concatenate([encode_field(gi), encode_field(go)], 0).reshape(FLAT)
+    return np.concatenate([encode_field(gi, False), encode_field(go, True)], 0).reshape(FLAT)
 
 # ---------------- synthetic generator ----------------
 def _rand_grid(rng):
@@ -123,13 +145,14 @@ def _stream(rng, batch):
         if e is not None: Xs.append(e[0]); ys.append(e[1])
     return np.array(Xs, np.float32), np.array(ys)
 
-def train(net, n_examples, batch=2048, seed=1, log_every=200000):
+def train(net, n_examples, batch=2048, seed=1, log_every=200000, seed_nodes=True):
     rng = np.random.default_rng(seed); t0 = time.time(); done = 0
-    Xs, ys = _stream(rng, net.n)                                  # seed each node with a REAL transform
-    net.nodes = (Xs / (np.linalg.norm(Xs, axis=1, keepdims=True) + 1e-9)).astype(np.float32)
-    net.sum = net.nodes.copy(); net.cnt = np.ones(net.n, np.float32)
-    net.hist[np.arange(net.n), ys] += 1.0
-    print("  seeded %d nodes from real examples" % net.n, flush=True)
+    if seed_nodes:                                                # fresh net: seed each node with a REAL transform
+        Xs, ys = _stream(rng, net.n)
+        net.nodes = (Xs / (np.linalg.norm(Xs, axis=1, keepdims=True) + 1e-9)).astype(np.float32)
+        net.sum = net.nodes.copy(); net.cnt = np.ones(net.n, np.float32)
+        net.hist[np.arange(net.n), ys] += 1.0
+        print("  seeded %d nodes from real examples" % net.n, flush=True)
     while done < n_examples:
         X, y = _stream(rng, batch); net.train_batch(X, y); done += len(X)
         if done % log_every < batch:
