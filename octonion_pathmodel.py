@@ -57,6 +57,10 @@ def Rmat(x):                                   # right-mult matrix: Rmat(x) @ r 
 def Rmat_batch(X):                             # (N,8) -> (N,8,8), columns omul(e_k, X)
     return np.stack([omul(np.broadcast_to(_E[k], X.shape), X) for k in range(8)], axis=2)
 
+def Lmat_batch(a):                             # (8,) -> (8,8), Lmat(a) @ x == a (x) x ; columns omul(a, e_k)
+    A8 = np.broadcast_to(a, (8, 8))
+    return np.stack([omul(A8[k], _E[k]) for k in range(8)], axis=1)
+
 # Fano-point role octons for neighbourhood offsets.  Self gets the real unit e0
 # (binding by e0 is the identity); each neighbour gets a distinct imaginary unit
 # e1..e7 -- the seven Fano points -- so the bundle is a holographic 7-slot code.
@@ -116,23 +120,74 @@ def _solve_paths(pairs, level, prior=None, lam=1e-3):
         paths[c] = np.linalg.solve(Gc, hc)
     return paths
 
+def _collect(pairs, level):
+    """Gather per-input-colour (context, output) octon stacks across all train pairs."""
+    if not all(i.shape == o.shape for i, o in pairs): return None
+    data = {}
+    for gi, go in pairs:
+        ctx = _context(gi, level); Fout = _field(go); gi = A(gi)
+        for c in np.unique(gi):
+            m = gi == c
+            X = ctx[m].reshape(-1, 8); Y = Fout[m].reshape(-1, 8)
+            if c in data: data[c] = (np.vstack([data[c][0], X]), np.vstack([data[c][1], Y]))
+            else: data[c] = (X, Y)
+    return data
+
+def _ridge(M, Y, lam, prior=None):             # (N,8,8),(N,8) -> r  via normal equations
+    G = np.einsum("nij,nik->jk", M, M) + lam * np.eye(8)
+    h = np.einsum("nij,ni->j", M, Y)
+    if prior is not None: G = G + lam * np.eye(8); h = h + lam * prior
+    return np.linalg.solve(G, h)
+
+def _solve1(data, lam=1e-3, prior=None):       # one relation octon r:  o_out = r (x) ctx
+    return {c: _ridge(Rmat_batch(X), Y, lam, None if prior is None else prior.get(c))
+            for c, (X, Y) in data.items()}
+
+E0 = np.zeros(8); E0[0] = 1.0
+def _solve2(data, iters=6, lam=1e-3):
+    """Two-step Fano walk  o_out = r2 (x) (r1 (x) ctx), fit by ALTERNATING LEAST SQUARES.
+    Each half-step is closed-form (the product is bilinear in (r1,r2)); no gradients.
+    r1 (x) ctx = R(ctx) r1 ;  r2 (x) (r1(x)ctx) = L(r2) R(ctx) r1 (linear in r1),
+                                                = R(r1(x)ctx) r2 (linear in r2)."""
+    out = {}
+    for c, (X, Y) in data.items():
+        Rc = Rmat_batch(X)                                  # (N,8,8): R(ctx)
+        r1 = _ridge(Rc, Y, lam); r2 = E0.copy()
+        for _ in range(iters):
+            mid = omul(np.broadcast_to(r1, X.shape), X)                # mid = r1 (x) ctx
+            r2 = _ridge(Rmat_batch(mid), Y, lam)                        # solve r2 | r1
+            Lr2 = Lmat_batch(r2)                                        # (8,8)
+            M = np.einsum("ij,njk->nik", Lr2, Rc)                       # L(r2) R(ctx), (N,8,8)
+            r1 = _ridge(M, Y, lam)                                      # solve r1 | r2
+        out[c] = (r1, r2)
+    return out
+
+def _step(r, ctx):                              # r (x) ctx, broadcast over a cell stack
+    return omul(np.broadcast_to(r, ctx.shape), ctx)
+
 def _apply(g, paths, level, fallback=None):
+    """paths[c] is either a single octon r (1-step) or a tuple (r1,..,rk) walked
+    inside-out: o = rk (x) (... (x) (r1 (x) ctx)).  Decode to nearest colour."""
     g = A(g); ctx = _context(g, level); H, W = g.shape
     out = np.empty((H, W, 8))
     for c in np.unique(g):
-        m = g == c
-        r = paths.get(c, fallback if fallback is not None else COLOR_OCTON[int(c)])
-        out[m] = omul(np.broadcast_to(r, (int(m.sum()), 8)), ctx[m])   # r (x) ctx, per cell
+        m = g == c; v = ctx[m]
+        p = paths.get(c, fallback if fallback is not None else COLOR_OCTON[int(c)])
+        chain = p if isinstance(p, tuple) else (p,)
+        for r in chain: v = _step(r, v)
+        out[m] = v
     return decode(out)
 
 def _path_solver(pairs, prior=None):
-    """Search context levels (recolour -> local -> wider local); accept the first
+    """Search context levels (recolour -> local -> wider local) and path LENGTH
+    (1-step relation octon, then 2-step Fano walk via ALS); accept the first
     octonionic path that reproduces every demonstration EXACTLY."""
     for level in (0, 1, 2):
-        paths = _solve_paths(pairs, level, prior=prior)
-        if paths is None: continue
-        if all(eq(_apply(i, paths, level), o) for i, o in pairs):
-            return lambda g, P=paths, L=level: _apply(g, P, L)
+        data = _collect(pairs, level)
+        if data is None: continue
+        for paths in (_solve1(data, prior=prior), _solve2(data)):
+            if all(eq(_apply(i, paths, level), o) for i, o in pairs):
+                return lambda g, P=paths, L=level: _apply(g, P, L)
     return None
 
 # ------------------------------------------- synthetic base universe of paths
