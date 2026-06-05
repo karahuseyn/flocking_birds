@@ -99,3 +99,39 @@ Two honest findings:
   over diverse *un-named* parametric transforms, satisfying "no predefined transforms" + "diversity,
   not accuracy" + "no gradient/backprop" simultaneously — not additive ARC coverage. Combined honest
   total stays **62 / 1000 training, 0 / 120 eval**.
+
+## Octonionic path-transform model — closed-form operator regression (octonion_pathmodel)
+
+A different realisation of the "universe of Fano paths" thesis: every object (pixel, pixel-object,
+token, …) lives in one octonionic space, and a PATH from object to object is a single relation octon
+r with `o_out = r ⊗ ctx`, where `ctx` is the cell's neighbourhood encoded holographically — each
+neighbour octon-multiplied by a fixed Fano-point role octon (e1..e7) and superposed (a vector-symbolic
+/ HRR code over octonions). The bond is carried *indirectly*, in the interference pattern of the
+bundle. Three pieces of advanced machinery, all gradient-free / no backprop:
+
+* **Fano-role binding** for the context octon (the indirect, correlational encoding).
+* **Closed-form octonionic operator regression**: the product is linear in r through the
+  right-multiplication matrix `R(ctx)` (`R(ctx)·r == r ⊗ ctx`, verified to 0 error), so per input
+  colour the path is SOLVED by the Tikhonov normal equations `r* = (ΣRᵀR + λI)⁻¹ ΣRᵀo_out` — 8
+  unknowns, no gradients. Accept only on EXACT reproduction of every demo; context level is searched
+  0 (recolour) → 1 (4-neighbour local) → 2 (8-neighbour).
+* **Synthetic base universe of paths** (PathUniverse): a small gradient-free codebook (256 8-D atoms)
+  grown by online competitive clustering of the relation octons that ~200k un-named parametric
+  object→object transforms induce — supplying a prior / clean-up. Much smaller than the 2048-node
+  paramnet.
+
+| variant | ARC training | ARC eval | novel over the 62 union |
+|---|---|---|---|
+| in-context path regression + coordinate path, **no base** | 7 / 1000 | 0 / 120 | **0** |
+| **+ synthetic base universe** (256 atoms, 200k transforms) | 7 / 1000 | 0 / 120 | **0** |
+
+The seven solves (0d3d703e, 25ff71a9, 2dee498d, 9dfd6313, b1948b0a, c8f0f002, d511f180) are colour /
+transpose / scale tasks already inside the union. **Honest finding:** a single continuous relation
+octon is an orthogonal-type map on R⁸, so it expresses only the *rotation-like* subset of ARC's
+transforms exactly — colour bijections that happen to be one octonionic rotation, and little else.
+The base universe adds 0, because snapping a solved path onto a learned atom perturbs r and breaks the
+exact-match the verifier demands; more synthetic data cannot enlarge the representational capacity of
+one octon. This is the same wall seen throughout: ARC's transforms are discrete-symbolic, and a
+continuous octonionic operator — however elegant the Fano-path formulation — captures a small,
+already-covered slice under exact verification. The model is faithful to the thesis and mathematically
+clean; its measured ceiling is the discrete/continuous mismatch, not the encoding or the training.
