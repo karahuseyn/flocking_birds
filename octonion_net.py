@@ -28,15 +28,36 @@ D = 2 * K * K                                                     # octonions pe
 FLAT = D * 8
 
 # ---------------- transform library: name -> (kind, spec) ----------------
-DEEP = [("rot180", "mirror_2x2"), ("crop", "tile_h"), ("flip_v", "mirror_v"), ("crop", "flip_h")]
+# Diversity over accuracy: besides the primitives, feed the codebook a broad bank of random
+# COMPOSITIONAL transforms (depth 2-3) so its prototypes span more of the transform manifold.
+import random as _random
+_PRIMS = ("flip_h", "flip_v", "transpose", "rot90", "rot180", "rot270", "anti_transpose",
+          "grav_down", "grav_up", "grav_left", "grav_right", "crop", "symmetrize",
+          "keep_largest", "keep_smallest", "tile_h", "tile_v", "tile_2x2",
+          "mirror_h", "mirror_v", "mirror_2x2")
+
+def _gen_compositions(n=80, seed=12345):
+    rng = _random.Random(seed)
+    body = ["flip_h", "flip_v", "transpose", "anti_transpose", "rot90", "rot180", "rot270",
+            "crop", "keep_largest", "keep_smallest", "grav_down", "grav_up", "grav_left",
+            "grav_right", "symmetrize"]                            # size-safe ops for inner steps
+    expand = ["tile_h", "tile_v", "tile_2x2", "mirror_h", "mirror_v", "mirror_2x2"]
+    comps = []
+    seen = set()
+    while len(comps) < n:
+        L = rng.choice([2, 2, 3])                                 # mostly depth 2, some depth 3
+        seq = [rng.choice(body) for _ in range(L - 1)] + [rng.choice(body + expand)]
+        t = tuple(seq)
+        if t in seen or len(set(t)) == 1: continue                # skip dups and a-a-a
+        seen.add(t); comps.append(seq)
+    return comps
+
+COMPS = _gen_compositions()
 TCLASSES = ([("id", "prim", ("identity",))]
-            + [(n, "prim", (n,)) for n in ("flip_h", "flip_v", "transpose", "rot90", "rot180", "rot270",
-                                           "anti_transpose", "grav_down", "grav_up", "grav_left",
-                                           "grav_right", "crop", "symmetrize", "keep_largest",
-                                           "keep_smallest", "tile_h", "tile_v", "tile_2x2",
-                                           "mirror_h", "mirror_v", "mirror_2x2")]
+            + [(n, "prim", (n,)) for n in _PRIMS]
             + [("recolour", "recol", None), ("crop+recolour", "seqrec", ("crop",))]
-            + [("+".join(d), "seq", d) for d in DEEP])
+            + [("c:" + "+".join(d), "seq", tuple(d)) for d in COMPS]                 # compositions
+            + [("cr:" + "+".join(d), "seqrec", tuple(d)) for d in COMPS[:30]])       # + recolour
 CLS = {name: i for i, (name, _, _) in enumerate(TCLASSES)}
 NC = len(TCLASSES)
 
@@ -79,7 +100,8 @@ def _pos_features():
             feats.append(np.exp(-((r - cx) ** 2 + (c - cy) ** 2) / (2 * 0.18 ** 2)))
     return np.stack(feats, 1)                                    # (K*K, F)
 
-if BIO:
+GRIDPLACE = os.environ.get("OCTO_GRIDPLACE", "0") == "1"         # off by default: it HURTS ARC routing
+if BIO and GRIDPLACE:
     _PF = _pos_features()
     _Wp = np.random.default_rng(2024).standard_normal((_PF.shape[1], 8))
     POS_OCT = XF.unit(_PF @ _Wp)                                 # (K*K,8) unit position octons
@@ -95,7 +117,7 @@ def encode_field(g, output=False):
     (3) lateral inhibition / center-surround contrast."""
     oct = COLOR_OCTON[_canon(g).ravel() % len(COLOR_OCTON)].astype(np.float64)
     if not BIO: return oct
-    oct = np.einsum("pok,pk->po", RPOS, oct)                     # (0) colour (x) position (grid+place binding)
+    if GRIDPLACE: oct = np.einsum("pok,pk->po", RPOS, oct)       # (0) colour (x) position (grid+place binding)
     if output: oct = oct * _CONJ                                 # (1) reciprocal conjugate I/O
     oct = _center_surround(oct)                                  # (3) lateral inhibition / center-surround
     oct = oct * np.where(INHIB, INHIB_GAIN, 1.0)[:, None]        # (2) inhibitory damping (Dale)
@@ -206,10 +228,10 @@ def _instantiate(name, pairs):
     if fn is None: return None
     return fn if all(eq(A(fn(i)), o) for i, o in pairs) else None
 
-def solve(task, net, topk=10):
+def solve(task, net, topk=20):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
     q = np.mean([descriptor(i, o) for i, o in pairs], 0)
-    for c in net.vote(q, k=64)[:topk]:
+    for c in net.vote(q, k=96)[:topk]:
         fn = _instantiate(TCLASSES[c][0], pairs)
         if fn is not None:
             try: return [A(fn(tp["input"])) for tp in task["test"]], TCLASSES[c][0]
