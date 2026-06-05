@@ -25,3 +25,4 @@ octonion_net.npz
 # trained OctoNet checkpoints (large build artifacts)
 octonion_net_*.npz
 octonion_net_*.npz.done
+octonion_paramnet.npz
