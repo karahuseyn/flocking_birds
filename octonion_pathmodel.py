@@ -1,0 +1,238 @@
+# octonion_pathmodel.py
+# ============================================================================
+# An octonionic PATH-TRANSFORM model.  The thesis (user's): picture one large
+# octonionic space in which any object -- a pixel, a whole pixel-object, a token,
+# a sentence -- is representable, and in which a FANO PATH runs from every object
+# to every other.  A path does not store a relation explicitly; it IMPLIES it
+# (relational / contextual / correlational), so the bond is encoded INDIRECTLY.
+# Training a base "universe of paths" on a huge stream of synthetic object->object
+# transforms then gives, for any ARC task, a way to read the path off the train
+# pairs and push the test input through it -- fast, gradient-free, no backprop.
+#
+# Concretely, three pieces of (deliberately advanced) mathematics:
+#
+#  (1) FANO-ROLE BINDING  (a vector-symbolic / holographic code over octonions).
+#      A cell's CONTEXT octon bundles its neighbourhood by octonion-multiplying
+#      each neighbour's colour octon with a fixed Fano-point role octon (an
+#      imaginary unit e_k) and superposing:  ctx(p) = unit( sum_d  R_d (x) Phi(p+d) ).
+#      The bond between centre and surround is carried indirectly, in the
+#      interference pattern of the bundle -- not as an explicit rule.
+#
+#  (2) CLOSED-FORM OCTONIONIC OPERATOR REGRESSION  (the path itself).
+#      A path is a single relation octon r with  o_out = r (x) ctx.  Octonion
+#      product is LINEAR in r through the right-multiplication matrix R(ctx)
+#      (R(ctx) @ r == r (x) ctx), so from the task's own cells we SOLVE
+#          r* = argmin_r  sum_i || R(ctx_i) r - o_out_i ||^2
+#      by the normal equations (Tikhonov-regularised) -- 8 unknowns, closed form,
+#      no gradients.  r* IS the Fano path; we apply it to the test grid and decode
+#      to the nearest colour, accepting only on EXACT reproduction of every demo.
+#
+#  (3) A SYNTHETIC BASE UNIVERSE OF PATHS  (the "big transform model").
+#      A small gradient-free codebook of path atoms r, harvested by online
+#      competitive clustering from a broad stream of un-named parametric
+#      object->object transforms.  It supplies a PRIOR (regularising the in-context
+#      regression toward a known path) and CLEAN-UP (snapping a noisy in-context
+#      path onto the nearest learned atom) -- this is where the base model can
+#      generalise a path to a context the task's train pairs never showed.
+#
+# Everything is gradient-free / no backprop.  The model is small (a few hundred
+# path atoms, 8-D each) -- much smaller than the 2048-node paramnet.
+# ============================================================================
+import os, sys, time, json
+import numpy as np
+from octonion_arc import A, eq, bg_color, DIHEDRAL
+from octonion_arc_phys import COLOR_OCTON
+import exp_fano_layer as XF
+import octonion_incontext as IC
+
+DIH = list(DIHEDRAL.values())
+
+# ------------------------------------------------------------------ octonion ops
+def omul(a, b): return XF.octo_mul(a, b)
+
+_E = np.eye(8)
+def Rmat(x):                                   # right-mult matrix: Rmat(x) @ r == r (x) x
+    return np.stack([omul(_E[k], x) for k in range(8)], axis=1)
+
+def Rmat_batch(X):                             # (N,8) -> (N,8,8), columns omul(e_k, X)
+    return np.stack([omul(np.broadcast_to(_E[k], X.shape), X) for k in range(8)], axis=2)
+
+# Fano-point role octons for neighbourhood offsets.  Self gets the real unit e0
+# (binding by e0 is the identity); each neighbour gets a distinct imaginary unit
+# e1..e7 -- the seven Fano points -- so the bundle is a holographic 7-slot code.
+def _roles(level):
+    offs = [(0, 0)]
+    if level >= 1: offs += [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    if level >= 2: offs += [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    R = {}
+    for i, o in enumerate(offs):
+        e = np.zeros(8); e[i % 8] = 1.0; R[o] = e
+    return R, offs
+
+def _field(g):                                 # grid -> (H,W,8) octonion field
+    return COLOR_OCTON[A(g)]
+
+def _context(g, level):
+    """Per-cell context octons via Fano-role binding of the neighbourhood (with the
+    grid's own background octon padded in for out-of-grid neighbours)."""
+    g = A(g); F = _field(g); H, W = g.shape; bg = COLOR_OCTON[bg_color(g)]
+    R, offs = _roles(level)
+    acc = np.zeros((H, W, 8))
+    for d in offs:
+        dr, dc = d
+        nb = np.empty((H, W, 8)); nb[:] = bg
+        r0, r1 = max(0, dr), min(H, H + dr); c0, c1 = max(0, dc), min(W, W + dc)
+        nb[r0 - dr:r1 - dr, c0 - dc:c1 - dc] = F[r0:r1, c0:c1]
+        acc += omul(R[d], nb)                   # bind neighbour to its Fano role, superpose
+    n = np.linalg.norm(acc, axis=-1, keepdims=True)
+    return acc / (n + 1e-12)
+
+def decode(F):                                 # (.,8) -> nearest colour
+    return (F.reshape(-1, 8) @ COLOR_OCTON.T).argmax(1).reshape(F.shape[:-1])
+
+# ----------------------------------------------- closed-form per-colour path solve
+def _solve_paths(pairs, level, prior=None, lam=1e-3):
+    """For each input colour c, solve the relation octon r_c (the Fano path) that
+    best maps the Fano-role context to the output octon, closed-form via the
+    normal equations.  prior (codebook) optionally Tikhonov-pulls r_c toward a
+    known atom.  Returns {c: r_c} or None if shapes mismatch."""
+    if not all(i.shape == o.shape for i, o in pairs): return None
+    G = {}; h = {}
+    for gi, go in pairs:
+        ctx = _context(gi, level); Fout = _field(go)
+        gi = A(gi)
+        for c in np.unique(gi):
+            m = gi == c
+            X = ctx[m].reshape(-1, 8); Y = Fout[m].reshape(-1, 8)
+            Rb = Rmat_batch(X)                                  # (N,8,8)
+            Gc = np.einsum("nij,nik->jk", Rb, Rb)               # sum R^T R
+            hc = np.einsum("nij,ni->j", Rb, Y)                  # sum R^T y
+            G[c] = G.get(c, 0) + Gc; h[c] = h.get(c, 0) + hc
+    paths = {}
+    for c in G:
+        Gc = G[c] + lam * np.eye(8); hc = h[c]
+        if prior is not None and c in prior:   # pull toward the codebook atom
+            Gc = Gc + lam * np.eye(8); hc = hc + lam * prior[c]
+        paths[c] = np.linalg.solve(Gc, hc)
+    return paths
+
+def _apply(g, paths, level, fallback=None):
+    g = A(g); ctx = _context(g, level); H, W = g.shape
+    out = np.empty((H, W, 8))
+    for c in np.unique(g):
+        m = g == c
+        r = paths.get(c, fallback if fallback is not None else COLOR_OCTON[int(c)])
+        out[m] = omul(np.broadcast_to(r, (int(m.sum()), 8)), ctx[m])   # r (x) ctx, per cell
+    return decode(out)
+
+def _path_solver(pairs, prior=None):
+    """Search context levels (recolour -> local -> wider local); accept the first
+    octonionic path that reproduces every demonstration EXACTLY."""
+    for level in (0, 1, 2):
+        paths = _solve_paths(pairs, level, prior=prior)
+        if paths is None: continue
+        if all(eq(_apply(i, paths, level), o) for i, o in pairs):
+            return lambda g, P=paths, L=level: _apply(g, P, L)
+    return None
+
+# ------------------------------------------- synthetic base universe of paths
+def _rand_grid(rng):
+    h, w = int(rng.integers(2, 12)), int(rng.integers(2, 12))
+    k = int(rng.integers(2, 6))
+    return rng.integers(0, k, size=(h, w))
+
+def _rand_transform(rng, g):
+    """A broad, UN-NAMED parametric object->object transform (shape-preserving so it
+    yields a value path): random colour bijection o random local cellular rule."""
+    g = A(g)
+    rule = rng.integers(0, g.max() + 1 if g.max() > 0 else 1, size=(int(g.max()) + 1, 5))
+    P = np.pad(g, 1)
+    nz = sum((P[1 + dr:1 + dr + g.shape[0], 1 + dc:1 + dc + g.shape[1]] > 0).astype(int)
+             for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)))
+    g2 = rule[g, np.minimum(nz, 4)]
+    perm = np.arange(10); perm[1:] = rng.permutation(perm[1:])
+    return perm[g2]
+
+class PathUniverse:
+    """Small gradient-free codebook of path atoms r (the base transform universe),
+    grown by online competitive clustering of the relation octons that the synthetic
+    object->object transforms induce."""
+    def __init__(self, n=256, seed=0):
+        rng = np.random.default_rng(seed)
+        self.atoms = XF.unit(rng.standard_normal((n, 8))); self.cnt = np.zeros(n); self.n = n
+    def _commit(self, r):
+        r = r / (np.linalg.norm(r) + 1e-12)
+        w = int((self.atoms @ r).argmax())
+        self.cnt[w] += 1; self.atoms[w] = XF.unit(self.atoms[w] + (r - self.atoms[w]) / self.cnt[w])
+    def train(self, n, seed=1, log_every=200000):
+        rng = np.random.default_rng(seed); t0 = time.time()
+        for done in range(0, n, 1):
+            gi = _rand_grid(rng); go = _rand_transform(rng, gi)
+            paths = _solve_paths([(gi, go)], level=int(rng.integers(0, 3)))
+            if paths:
+                for r in paths.values(): self._commit(r)
+            if (done + 1) % log_every == 0:
+                print("  paths %d/%d (%.0fs, %d atoms used)" %
+                      (done + 1, n, time.time() - t0, int((self.cnt > 0).sum())), flush=True)
+    def prior_for(self, paths):
+        """Clean-up: snap each solved path onto its nearest learned atom."""
+        out = {}
+        for c, r in paths.items():
+            rn = r / (np.linalg.norm(r) + 1e-12)
+            out[c] = self.atoms[int((self.atoms @ rn).argmax())] * np.linalg.norm(r)
+        return out
+    def save(self, p): np.savez_compressed(p, atoms=self.atoms, cnt=self.cnt)
+    @classmethod
+    def load(cls, p):
+        d = np.load(p); o = cls.__new__(cls)
+        o.atoms, o.cnt = d["atoms"], d["cnt"]; o.n = len(o.atoms); return o
+
+# ------------------------------------------------------------------- full solve
+def solve(task, uni=None):
+    pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
+    tests = [A(tp["input"]) for tp in task["test"]]
+    # (A) value path on raw pairs (shape-preserving local/relational transforms)
+    fn = _path_solver(pairs)
+    if fn is None and uni is not None:          # base universe as clean-up prior
+        p0 = _solve_paths(pairs, 1)
+        if p0: fn = _path_solver(pairs, prior=uni.prior_for(p0))
+    if fn is not None:
+        try: return [A(fn(t)) for t in tests]
+        except Exception: pass
+    # (B) coordinate path (emergent octonionic affine + Fano colour), then value path
+    r = IC.infer(pairs, iters=120)
+    if r is not None:
+        Amat, b, osh, rc = r
+        warp = lambda g: A(rc(IC._warp(A(g), Amat, b, osh(A(g).shape))))
+        if all(eq(warp(i), o) for i, o in pairs):
+            try: return [A(warp(t)) for t in tests]
+            except Exception: pass
+        mids = [warp(i) for i, _ in pairs]
+        if all(m.shape == o.shape for m, (_, o) in zip(mids, pairs)):
+            fn2 = _path_solver(list(zip(mids, [o for _, o in pairs])))
+            if fn2 is not None:
+                try: return [A(fn2(warp(t))) for t in tests]
+                except Exception: pass
+    return None
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
+    P = "octonion_pathmodel.npz"
+    if cmd == "train":
+        N = int(sys.argv[2]) if len(sys.argv) > 2 else 1000000
+        uni = PathUniverse(n=int(os.environ.get("ATOMS", "256")))
+        print("PATH universe: %d atoms, %d synthetic object->object transforms" % (uni.n, N), flush=True)
+        uni.train(N); uni.save(P); print("saved", P, flush=True)
+    else:
+        uni = PathUniverse.load(P) if os.path.exists(P) else None
+        for split in ("training", "evaluation"):
+            ch = json.load(open("arc_data/arc-agi_%s_challenges.json" % split))
+            sol = json.load(open("arc_data/arc-agi_%s_solutions.json" % split))
+            t0 = time.time(); s = []
+            for tid, task in ch.items():
+                try: pr = solve(task, uni)
+                except Exception: pr = None
+                if pr and all(eq(pr[i], A(g)) for i, g in enumerate(sol[tid])): s.append(tid)
+            print("pathmodel ARC %s: %d/%d (%.0fs)" % (split, len(s), len(ch), time.time() - t0), flush=True)
+            open("/tmp/pathmodel_%s.ids" % split, "w").write(" ".join(s))
