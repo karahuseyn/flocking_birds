@@ -242,6 +242,54 @@ class PathUniverse:
         d = np.load(p); o = cls.__new__(cls)
         o.atoms, o.cnt = d["atoms"], d["cnt"]; o.n = len(o.atoms); return o
 
+# ------------------------------------------- discrete walk through the path universe
+def _apply_atom(g, r, level):
+    """One discrete path step: push the grid through atom r at a context level and
+    DECODE to the nearest colour.  The decode is the discretisation that stops the
+    continuous overfit -- each step lands back on a real grid."""
+    g = A(g); ctx = _context(g, level)
+    return decode(_step(r, ctx.reshape(-1, 8)).reshape(g.shape + (8,)))
+
+def _match(a, b):
+    return float((A(a) == A(b)).mean()) if a.shape == b.shape else -1.0
+
+def _walk_solver(pairs, uni, depth=3, beam=8, topk=48, max_expand=700):
+    """Beam search a SHARED discrete program (sequence of learned atoms+levels) that
+    reproduces every demonstration EXACTLY.  The alphabet is the synthetic base
+    universe -- task-independent, learned, un-named -- so the only thing fitted per
+    task is the WALK (a discrete object), not a continuous operator.  Gradient-free."""
+    if uni is None or not all(i.shape == o.shape for i, o in pairs): return None
+    order = np.argsort(-uni.cnt)[:topk]                       # most-used atoms
+    actions = [(uni.atoms[a], L) for a in order for L in (0, 1)]
+    ins = [i for i, _ in pairs]; outs = [o for _, o in pairs]
+    def score(state): return float(np.mean([_match(s, o) for s, o in zip(state, outs)]))
+    start = tuple(ins)
+    beam_states = [(score(start), start, [])]; seen = {tuple(map(lambda x: x.tobytes(), start))}
+    expanded = 0
+    for _ in range(depth):
+        cand = []
+        for sc, state, prog in beam_states:
+            if sc >= 1.0: continue
+            for ai, (r, L) in enumerate(actions):
+                if expanded >= max_expand: break
+                try: ns = tuple(_apply_atom(s, r, L) for s in state)
+                except Exception: continue
+                expanded += 1
+                key = tuple(x.tobytes() for x in ns)
+                if key in seen: continue
+                seen.add(key); s2 = score(ns)
+                if s2 >= 1.0:                                  # exact on all demos -> program found
+                    return [r2 for r2 in prog] + [(r, L)]
+                cand.append((s2, ns, prog + [(r, L)]))
+            if expanded >= max_expand: break
+        if not cand: break
+        cand.sort(key=lambda t: -t[0]); beam_states = cand[:beam]
+    return None
+
+def _run_walk(g, program):
+    for r, L in program: g = _apply_atom(g, r, L)
+    return A(g)
+
 # ------------------------------------------------------------------- full solve
 def solve(task, uni=None):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
@@ -268,6 +316,11 @@ def solve(task, uni=None):
             if fn2 is not None:
                 try: return [A(fn2(warp(t))) for t in tests]
                 except Exception: pass
+    # (C) discrete walk through the learned path universe (shared program, beam search)
+    prog = _walk_solver(pairs, uni)
+    if prog is not None:
+        try: return [_run_walk(t, prog) for t in tests]
+        except Exception: pass
     return None
 
 
