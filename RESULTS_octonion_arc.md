@@ -423,3 +423,19 @@ but, in isolation, not in eval. Honest status: **96/1000 training, 0/120 eval**,
 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 on training and a flat 0 on eval — a structural property of
 ARC-AGI-2, not a tuning gap our gradient-free, no-predefined-transform vocabulary can close by
 enlargement alone.
+
+**The strongest eval-transfer bet — universal symmetry — also yields 0 eval.** If any single
+mechanism should cross to evaluation it is symmetry/periodicity occlusion repair (octonion_symrepair):
+detect the symmetry group the visible cells obey (mirrors, 180/transpose, all horizontal/vertical
+periods) and reconstruct the region hidden behind an occluder colour; output the repaired grid or the
+hole's crop. Symmetry is universal, so this was the best candidate to generalise across distributions.
+Verified on synthetic mirror and periodic holes; on ARC it adds **4/1000 training, +2 novel**
+(f9012d9b, ff805c23) → union **98/1000**, and **0/120 eval**. With this, six independent mechanisms —
+CA, fractal, panel combination, object selection, and symmetry repair (plus the prior emergent stack)
+— have each been measured on evaluation and each scores exactly 0/120. The evidence is now decisive:
+the ARC-AGI-2 evaluation ceiling for this gradient-free, no-predefined-transform, per-task-solve
+approach is essentially 0, and it does not move by adding more clean mechanisms — not even the most
+universal one. Raising training coverage (now 98/1000) and raising eval coverage are, on this
+benchmark, nearly independent goals; the eval set demands compositional/novel abstraction that no
+finite library of cleanly-verifiable single mechanisms supplies. Final honest status: **98/1000
+training, 0/120 eval.**
