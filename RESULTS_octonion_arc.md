@@ -349,3 +349,39 @@ coverage has only ever come from adding a new discrete grid-program *primitive* 
 structure (the D4-equivariant CA, the substitution/fractal rewrite) — not from a new way of searching
 or composing the primitives already present. The combined honest total stays **68/1000** training,
 0/120 eval.
+
+## Growing the vocabulary: a mechanism, not a multiplier (+0 from CA variants, +25 from a new one)
+
+Acting on that lesson — the reachable set is bounded by the operator vocabulary — we tried to grow the
+vocabulary *synthetically*, while honouring the no-predefined-transforms rule (all new families are
+un-named, parametric, fit from the task's own data). Two experiments make the principle exact.
+
+**Multiplying an existing mechanism saturates: +0.** octonion_wolfram_x enumerates ALL subgroups of
+the dihedral group D4 (C4, D2, C2, the two axis mirrors, the two diagonal mirrors) as neighbourhood
+canonicalisation groups — each a different G-equivariant CA rule `φ(g·σ)=φ(g)·σ` — plus radius-2
+outer-totalistic keys. Subgroup equivariances verified (C4 under rotation, mirror under flip, C2 under
+half-turn). Result: **11/1000, exactly the same 11 as the full-D4 family, +0 novel.** The subgroups are
+*weaker* generalisers than D4; the +5 symmetry tasks need the full group, and no training task needs a
+partial-symmetry CA that D4 misses. Mechanically widening along an axis we already had adds redundant
+or weaker variants, nothing more.
+
+**A genuinely new mechanism pays off hugely: +25.** octonion_combine adds PANEL COMBINATION — the
+input is several equal panels (split by a learned separator colour, or as equal halves/thirds) merged
+into one output by a learned cellwise k-ary table `T:(p₁[r,c],…,p_k[r,c])→out[r,c]`. We name none of
+the logical operations; the table is fit from data and accepted only on EXACT reproduction. This is a
+binary/k-ary cellwise operator over sub-grids — a mechanism absent from the CA (single grid),
+substitution (expansion) and affine families. Result: **25/1000, all 25 NOVEL** over the 68 union (the
+single biggest lever in the entire study), independently re-verified against held-out solutions.
+
+| new family | ARC training | novel over 68 union | kind |
+|---|---|---|---|
+| Wolfram-X (D4 subgroups + radius-2) | 11 / 1000 | **0** | variant of an existing mechanism (CA) |
+| **panel combination (cellwise k-ary)** | **25 / 1000** | **+25** | a genuinely new mechanism |
+
+Unioned into octonion_full, the gradient-free, no-predefined-transform total rises to **~93/1000**
+training (8 → 36 → 53 → 59 → 62 → 66/68 → ~93), 0/120 eval. The sharpened conclusion: *growing the
+vocabulary works, but only along NEW MECHANISMS.* Adding more parameterisations or symmetries of a
+primitive you already have saturates immediately; adding a primitive that computes something
+structurally different (cellwise panel merge) unlocks a whole band of tasks at once. The leverage was
+never search, recurrence, or continuous octonionic transport — it is the set of distinct discrete
+grid-program mechanisms the solver can fit and verify.
