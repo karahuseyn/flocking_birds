@@ -24,9 +24,10 @@ import octonion_paths as PA
 import octonion_wolfram as WF
 import octonion_fractal as FR
 import octonion_combine as CB
+import octonion_objsel as OS
 
 def solve(task):
-    for mod, arg in ((L, 2), (PA, None), (WF, None), (FR, None), (CB, None)):
+    for mod, arg in ((L, 2), (PA, None), (WF, None), (FR, None), (CB, None), (OS, None)):
         try: p = mod.solve(task, arg) if arg is not None else mod.solve(task)
         except Exception: p = None
         if p is not None: return p
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     sol = json.load(open(DIR + "arc-agi_%s_solutions.json" % split))
     t0 = time.time(); solved = []
     for tid, task in ch.items():
-        for mod, arg in ((L, 2), (PA, None), (WF, None), (FR, None), (CB, None)):
+        for mod, arg in ((L, 2), (PA, None), (WF, None), (FR, None), (CB, None), (OS, None)):
             try: p = mod.solve(task, arg) if arg is not None else mod.solve(task)
             except Exception: p = None
             if p is not None and all(eq(p[i], A(g)) for i, g in enumerate(sol[tid])):

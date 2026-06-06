@@ -385,3 +385,41 @@ primitive you already have saturates immediately; adding a primitive that comput
 structurally different (cellwise panel merge) unlocks a whole band of tasks at once. The leverage was
 never search, recurrence, or continuous octonionic transport — it is the set of distinct discrete
 grid-program mechanisms the solver can fit and verify.
+
+## Pushing for full training coverage — and the honest train→eval truth (+3 train, +0 eval)
+
+Adding the next new mechanism, OBJECT SELECTION (octonion_objsel.py): segment the grid into objects,
+SELECT one by an un-named parametric criterion (size / bbox-area / #colours extremum, the odd-one-out
+under a D4-canonical shape / colour / size signature, or the majority), and emit a function of it
+(bbox crop / binary mask / recolour). Gradient-free, fit from data, exact-verify. Result: **7/1000
+training, +3 novel** (358ba94e, 9a4bb226, cd3c21df) over the 93, lifting the union to **96/1000**.
+
+But the central question — does climbing training transfer to eval? — now has a clear, repeatedly
+measured answer, and it is **no**:
+
+| mechanism | training contribution | EVAL contribution |
+|---|---|---|
+| symmetry-aware CA (D4) | +5 | **0 / 120** |
+| substitution / fractal | +2 | **0 / 120** |
+| panel combination | +25 | **0 / 120** |
+| object selection | +3 | **0 / 120** |
+| **full union** | **96 / 1000** | **0 / 120** |
+
+This refutes the intuition "solve all 1000 training ⇒ succeed on eval." Our solvers do **not** overfit
+in the usual sense — each task is solved from its own demonstrations and verified, so a mechanism that
+fires generalises *within its class* to any task of that class, train or eval. The 0/120 therefore is
+not a train/test memorisation gap; it is direct evidence that **ARC-AGI-2's evaluation tasks do not
+reduce to the clean single mechanisms that cover the training split.** Panel combination is a real,
+general mechanism (25 train) yet matches 0 eval tasks — the eval set's tasks that "look" like panel
+combination use it inside larger compositions or with non-tabular merge logic. ARC-2 eval was
+deliberately built to defeat exactly this accumulate-clean-mechanisms strategy.
+
+The consequence for strategy is concrete and honest: chasing 1000/1000 training by adding ever more
+specific mechanisms is a form of **vocabulary overfitting to the training distribution** — the same
+synthetic-accuracy ↔ ARC-transfer anti-correlation seen at the top of this file, now reconfirmed at the
+mechanism level. The only thing that can move eval is mechanisms (and, crucially, *deep compositions of
+them*) that also occur in the eval distribution; every clean mechanism we have added occurs in training
+but, in isolation, not in eval. Honest status: **96/1000 training, 0/120 eval**, with the progression
+8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 on training and a flat 0 on eval — a structural property of
+ARC-AGI-2, not a tuning gap our gradient-free, no-predefined-transform vocabulary can close by
+enlargement alone.
