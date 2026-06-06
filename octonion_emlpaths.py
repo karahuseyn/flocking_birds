@@ -46,19 +46,28 @@ ATOMS = list(FT) + [
 
 CLOSER_MODS = [WF, FR, CB, OS, SR, ORU, MO, RY]
 
+def _colormap(pairs):
+    cm = {}
+    for i, o in pairs:
+        if i.shape != o.shape: return None
+        for a, b in zip(i.ravel().tolist(), o.ravel().tolist()):
+            if cm.get(a, b) != b: return None
+            cm[a] = b
+    return lambda g: np.vectorize(lambda c: cm.get(int(c), int(c)))(A(g))
+
 def _close(cur, outs, cur_tests):
     pairs = list(zip(cur, outs))
-    try:
-        fn = single_step(pairs)
-        if fn is not None and all(eq(A(fn(c)), o) for c, o in zip(cur, outs)):
-            return [A(fn(t)) for t in cur_tests]
-    except Exception: pass
-    task = {"train": [{"input": c, "output": o} for c, o in zip(cur, outs)],
-            "test": [{"input": t} for t in cur_tests]}
-    for M in CLOSER_MODS:
-        try: pr = M.solve(task)
-        except Exception: pr = None
-        if pr is not None and all(p is not None for p in pr): return [A(p) for p in pr]
+    same_shape = all(c.shape == o.shape for c, o in zip(cur, outs))
+    # exact already (free), or a cheap shape-preserving closer
+    if same_shape:
+        if all(np.array_equal(c, o) for c, o in zip(cur, outs)):
+            return [A(t) for t in cur_tests]
+        for mk in (_colormap, lambda p: single_step(p), lambda p: WF.rule_solver(p)):
+            try:
+                fn = mk(pairs)
+                if fn is not None and all(eq(A(fn(c)), o) for c, o in zip(cur, outs)):
+                    return [A(fn(t)) for t in cur_tests]
+            except Exception: pass
     return None
 
 def _sig(states):                                # observational-equivalence signature (train states)
