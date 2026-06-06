@@ -474,3 +474,16 @@ maximum vocabulary richness: the reachable set is the union of the single mechan
 deeper or composing harder does not enlarge it.** Every gain in this study came from adding a new
 mechanism; none ever came from a cleverer or deeper way of combining the mechanisms already present.
 The honest union therefore stands at **111/1000 training, 0/120 eval.**
+
+## Two more mechanisms — training 111 → 116 (+5), eval still 0
+
+octonion_more.py: **kaleidoscope (dihedral) tiling** — output is an a×b grid of input-sized tiles,
+each a position-specific element of the square's dihedral group, learned per tile (mirror-tiling,
+rotation-tiling, kaleidoscopes); and **symmetry completion (overlay)** — complete the grid to be
+invariant under a detected symmetry subgroup by overlaying the orbit (a background cell takes the
+consistent non-background value of its partners). Both un-named, gradient-free, exact-verified.
+Result: **25/1000 training, +5 novel** (46442a0e, 496994bd, 5751f35e, 8d5021e8, 9ddd00f0) → union
+**116/1000**; **0/120 eval**. (496994bd is the third of the bio-net's robust novel solves from the top
+of this file, now recovered by an explicit kaleidoscope/symmetry mechanism.) Progression:
+8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → **116** on training, flat 0/120 eval — the
+established pattern: each new mechanism lifts training, none moves eval.
