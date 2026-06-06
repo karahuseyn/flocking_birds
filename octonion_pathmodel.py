@@ -395,7 +395,7 @@ def solve(task, uni=None):
         try: return [A(fn(t)) for t in tests]
         except Exception: pass
     # (C) discrete walk through the learned path universe (shared program, beam search)
-    prog = _walk_solver(pairs, uni)
+    prog = None if os.environ.get("NOWALK") == "1" else _walk_solver(pairs, uni)
     if prog is not None:
         try: return [_run_walk(t, prog) for t in tests]
         except Exception: pass
