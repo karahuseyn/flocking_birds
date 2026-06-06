@@ -458,3 +458,19 @@ union to **111/1000**; **0/120 eval**, consistent with every other mechanism. (N
 3906de3d were the bio-net's two robust novel solves from the top of this file — now recovered cleanly
 by an explicit gravity/recolour mechanism.) Progression: 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 →
 **111** on training; 0/120 eval throughout.
+
+### Deep composition over the full vocabulary adds nothing (confirmed at maximum richness)
+
+To test the "combined rules + deeper network" idea directly, octonion_deepcompose.py runs an
+error-guided beam (carried in lockstep over train pairs and test inputs) whose forward moves are the
+structural transforms and whose CLOSERS are the ENTIRE mechanism vocabulary — layered single_step,
+Wolfram CA, fractal, panel combination, object selection, symmetry repair and object rules — each
+invoked through its own exact-verifying solve() on a synthetic per-node task. Run deep and wide
+(beam 16, cycles 4) over all 1000 training tasks (1975 s): **95/1000, +0 novel** over the 111 union —
+and in fact *below* it (it misses 16, the ones reached only by octonion_paths and the layered depth-2
+DFS, which are not in its closer set). So deep, wide composition of the full vocabulary recovers a
+subset of the cheap union and discovers nothing new. This is the recurrence/composition lesson at
+maximum vocabulary richness: the reachable set is the union of the single mechanisms; **searching
+deeper or composing harder does not enlarge it.** Every gain in this study came from adding a new
+mechanism; none ever came from a cleverer or deeper way of combining the mechanisms already present.
+The honest union therefore stands at **111/1000 training, 0/120 eval.**
