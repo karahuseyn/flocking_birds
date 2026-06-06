@@ -487,3 +487,14 @@ Result: **25/1000 training, +5 novel** (46442a0e, 496994bd, 5751f35e, 8d5021e8, 
 of this file, now recovered by an explicit kaleidoscope/symmetry mechanism.) Progression:
 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → **116** on training, flat 0/120 eval — the
 established pattern: each new mechanism lifts training, none moves eval.
+
+## Three more mechanisms — training 116 → 120 (+4), eval still 0
+
+octonion_rays.py: **ray drawing** (cast rays from every coloured cell in a learned direction set —
+H/V/orthogonal/diagonal/8 — to the border, with learned stop-at-obstacle / overwrite mode),
+**connect pairs** (fill the gap between aligned equal-coloured cells), and **denoise** (remove
+isolated single-cell specks to background). Un-named, gradient-free, exact-verified. Result:
+**4/1000 training, +4 novel** (22168020, 22eb0ac0, 623ea044, ded97339) → union **120/1000**;
+**0/120 eval**. Progression now 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → **120** on
+training, 0/120 eval throughout — the same two-sided result across every mechanism: training coverage
+scales with the size of the mechanism vocabulary, evaluation does not budge from 0.
