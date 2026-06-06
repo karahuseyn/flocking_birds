@@ -498,3 +498,23 @@ isolated single-cell specks to background). Un-named, gradient-free, exact-verif
 **0/120 eval**. Progression now 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → **120** on
 training, 0/120 eval throughout — the same two-sided result across every mechanism: training coverage
 scales with the size of the mechanism vocabulary, evaluation does not budge from 0.
+
+## EML's phylogenetic network applied to ARC — the first composition gain (+2, union 122)
+
+Following the EML paper's Figures 1-2 (every object is a binary tree over one operator; the same object
+has many equivalent trees; objects interconvert along short composition paths in a bootstrapped network),
+octonion_emlpaths.py treats grid-STATES as nodes and atomic grid ops as converter edges, and identifies
+composition trees by OBSERVATIONAL EQUIVALENCE on the train inputs (EML's value-vector dedup). It is an
+exact bottom-up enumeration over equivalence CLASSES — no heuristic pruning, unlike the greedy beam —
+over an alphabet ENRICHED with the new mechanisms as intermediate atoms (gravity, denoise, connect),
+with cheap shape-matched closers (colormap, layered single_step, Wolfram CA). Depth 2, ~24 min/1000.
+
+Result: **44/1000 training, +2 novel** (253bf280, d37a1ef5) over the 120 union → **122/1000**;
+**0/120 eval**. This is the **first time composition adds anything** in the whole study — the greedy
+beam (octonion_deepcompose, beam16/cycles4, full closers) had added exactly 0. Two reasons it now
+helps, both EML-faithful: (i) exact equivalence-class enumeration explores paths the heuristic pruned
+away; (ii) the alphabet now contains the new intermediate atoms, so a gravity-then-X or denoise-then-X
+path becomes reachable. The gain is small (+2) and confirms the boundary precisely: composition pays
+only when it both searches completely AND has new atoms to compose — and even then only marginally,
+versus +25/+13/+5 for outright new mechanisms. Progression on training:
+8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → 120 → **122**; eval flat at 0/120.
