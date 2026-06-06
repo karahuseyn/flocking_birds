@@ -200,3 +200,42 @@ every lever in this file — bigger nets, more synthetic, bio encoding, parametr
 composition (continuous and discrete), VQ symbols, and now Kalman/RLS — the gradient-free octonionic
 machinery tops out exactly where its continuous, rotation-like primitive can reach; the 62-task
 coverage lives entirely in the discrete grid-program solvers of the emergent union.
+
+## Wolfram cellular automata — the first additive lever (+5 novel, 62 → 67)
+
+Acting on this file's own conclusion (the leverage is in discrete grid-program atoms with the right
+symmetry), we adapted Stephen Wolfram's cellular automata seriously (octonion_wolfram.py). An ARC
+colour grid is a state of a 2-D CA over the alphabet {0..9} (plus an edge symbol); a transform is the
+EVOLUTION of a local rule φ : (centre, neighbourhood) → colour. We mine the computational universe —
+learn φ from the task's own transitions and evolve it — accepting only on EXACT reproduction of every
+demonstration. Wolfram's rule families are made symmetry-aware, which is the whole point:
+
+* **outer-totalistic** — key = (centre, multiset of neighbour colours); invariant under the symmetric
+  group permuting neighbours.
+* **totalistic** — key = multiset of the whole neighbourhood.
+* **D4-equivariant** — key = the orbit-canonical patch under D4, the dihedral symmetry group of the
+  square lattice (4 rotations × 2 reflections). Learning on canonical representatives makes φ exactly
+  D4-equivariant: φ(g·σ) = φ(g)·σ for σ ∈ D4. (D4 is the lattice-symmetry shadow of the octonionic /
+  triality symmetry used elsewhere here.) Verified: the 8 D4 permutations form a faithful group action
+  on the 3×3 neighbourhood and the canonical key is constant across all 8 lattice symmetries.
+
+The rule is evolved one step and (for convergent / growth rules) to its FIXED POINT — by computational
+irreducibility there is no closed-form shortcut for the T-step map, so one runs it.
+
+| family | ARC training | ARC eval | novel over the 62 union |
+|---|---|---|---|
+| **Wolfram CA (all families, unioned)** | **11 / 1000** (1 s) | 0 / 120 | **+5** |
+
+The five novel solves are **4258a5f9, 54d9e175, b60334d2, b6afb2da, ce22a75a**, and a clean diagnostic:
+**all five come from the D4-equivariant family** (Moore radius 1, single step), with rule tables of
+just |φ| = 9–28 entries. The exact-patch LUT (octonion_refine) and the totalistic families do not get
+them — these tasks place the same local motif at rotated/reflected positions, so only a rule that is
+equivariant under the lattice's dihedral symmetry generalises from the few train cells to the held-out
+test grid. That |φ| = 9 distinct canonical neighbourhoods can determine an entire 9×9 transform is a
+textbook Wolfram result: a very simple local rule, symmetry-reduced, reproduces a complex-looking grid
+map. This is the **first lever in the entire study that adds genuinely new coverage over the union**,
+and it does so by being exactly what the failed octonionic-path experiments were not: a *discrete
+grid-program* primitive carrying the *right symmetry*. Unioned into octonion_full, the gradient-free,
+no-predefined-transform total is **67 / 1000 training** (8 → 36 → 53 → 59 → 62 → 67), 0 / 120 eval —
+the evaluation set's novel abstractions remain out of reach of any finite learned rule library, but on
+the training distribution the symmetry-aware CA is a real, cheap (1 s), and principled gain.

@@ -3,17 +3,22 @@
 #   * octonion_layered (depth 2) -- structural forward transforms + emergent closers (affine/Fano,
 #     scaling, dihedral tiling, crop, symmetry repair, learned CA local rule) with multi-step search
 #   * octonion_paths            -- object-level emergent paths + in-task path library
+#   * octonion_wolfram          -- symmetry-aware cellular automata (Wolfram rule families: outer-
+#     totalistic, totalistic, and D4-equivariant), rule learned from data and evolved to a fixed point
 # Every solver verifies EXACTLY on all demonstrations before predicting. No gradients, no backprop.
-# Measured grand total: 62/1000 ARC training (no predefined task-transforms; double the hand-built
-# operator bank's 31), 0/120 ARC-2 evaluation. The progression across the whole line of work was
-# 8 -> 36 -> 53 -> 59 -> 62 on training, 0 on ARC-2 eval -- a structural finding, not a tuning gap.
+# Measured grand total: 67/1000 ARC training (the Wolfram CA adds +5 NOVEL over the prior 62 -- the
+# first additive lever in the whole line of work), 0/120 ARC-2 evaluation. Progression on training:
+# 8 -> 36 -> 53 -> 59 -> 62 -> 67. The +5 all come from the D4-equivariant CA family (dihedral-group
+# canonicalisation of the neighbourhood), confirming that the leverage is in discrete grid-program
+# atoms with the right symmetry, not in continuous octonionic transport.
 import json, time, sys
 from octonion_arc import A, eq
 import octonion_layered as L
 import octonion_paths as PA
+import octonion_wolfram as WF
 
 def solve(task):
-    for mod, arg in ((L, 2), (PA, None)):
+    for mod, arg in ((L, 2), (PA, None), (WF, None)):
         try: p = mod.solve(task, arg) if arg is not None else mod.solve(task)
         except Exception: p = None
         if p is not None: return p
@@ -25,7 +30,7 @@ if __name__ == "__main__":
     sol = json.load(open(DIR + "arc-agi_%s_solutions.json" % split))
     t0 = time.time(); solved = []
     for tid, task in ch.items():
-        for mod, arg in ((L, 2), (PA, None)):
+        for mod, arg in ((L, 2), (PA, None), (WF, None)):
             try: p = mod.solve(task, arg) if arg is not None else mod.solve(task)
             except Exception: p = None
             if p is not None and all(eq(p[i], A(g)) for i, g in enumerate(sol[tid])):
