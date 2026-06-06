@@ -126,6 +126,9 @@ bundle. Three pieces of advanced machinery, all gradient-free / no backprop:
 | **+ synthetic base universe** (256 atoms, 200k transforms) | 7 / 1000 | 0 / 120 | **0** |
 | **+ 2-step Fano walk** (ALS, `o_out = r2 ⊗ (r1 ⊗ ctx)`) | 7 / 1000 | 0 / 120 | **0** |
 | **+ discrete walk** (beam search a shared program over learned atoms) | 7 / 1000 | 0 / 120 | **0** |
+| **+ VQ octonionic-context cellular rule** (discrete grid-operator) | 8 / 1000 | 0 / 120 | **0** |
+| **+ octonionic Kalman/RLS path** (q=0 ≡ ridge) | 7 / 1000 | 0 / 120 | **0** |
+| **+ Kalman with drift** (q>0, tracks a varying path) | 4 / 1000 | 0 / 120 | **0** |
 
 The seven solves (0d3d703e, 25ff71a9, 2dee498d, 9dfd6313, b1948b0a, c8f0f002, d511f180) are colour /
 transpose / scale tasks already inside the union. **Honest finding:** a single continuous relation
@@ -170,3 +173,30 @@ closed-form / ALS / beam search), tops out at the 7-task rotation-like slice it 
 The honest takeaway: the universe-of-paths thesis is implementable and clean, but a single-octon path
 step is the wrong primitive for ARC; the leverage is in the discrete grid-program atoms, not in the
 continuous octonionic transport between objects.
+
+**Discretising the atom (VQ octonionic-context cellular rule) recovers one more covered task, +0
+novel.** Vector-quantising each cell's Fano-role context octon against the learned universe gives a
+discrete symbol (the path-universe "word" for that local context); a table keyed by (centre colour,
+context symbol) → output colour is then a learned, un-named discrete grid-operator. It nudges training
+7 → 8 (recovering a699fb00, already in the union) but adds nothing new: the VQ key is lossy, so distinct
+contexts that the true rule separates collide onto one symbol, and test cells whose (colour, symbol)
+key was unseen in train fall back to identity. A learned octonionic codeword is a weaker key than the
+raw neighbourhood features the emergent local-rule solver already uses.
+
+**Integrating Kalman filters changes nothing on ARC, for a reason the octonion algebra makes exact.**
+The relation octon is a hidden state with linear measurement `o_out = R(ctx) r`, so a Kalman filter is
+the recursive-Bayes form of the batch ridge: verified, RLS (q=0) matches the batch solve to 6.7e-6 and
+recovers the true r to 1e-9. Three things follow, all measured: (i) q=0 Kalman ≡ ridge, so it solves
+the same rotation-like slice (7 / 1000, +0 novel); (ii) the posterior-covariance **overfit gate is
+defeated by the division-algebra structure** — a single context octon's right-multiplication matrix is
+invertible, so one cell already pins r and `trace(P) → 0`; the covariance measures parameter
+uncertainty, not the real error here, which is single-octon *model misspecification*; (iii) the
+**drift variant (q>0) actively hurts: 4 / 1000, +0 novel** — a position-varying path fits some train
+cells but has no principled transport to held-out test positions, and the added process noise breaks
+exact reproductions the stationary solve kept. Kalman filtering is elegant and correctly wired into the
+octonionic estimator (uncertainty-aware paths, Bayesian prior fusion), but on ARC it confirms the same
+wall: the ceiling is the primitive and the discrete/continuous mismatch, not the estimator. Across
+every lever in this file — bigger nets, more synthetic, bio encoding, parametric generators, path
+composition (continuous and discrete), VQ symbols, and now Kalman/RLS — the gradient-free octonionic
+machinery tops out exactly where its continuous, rotation-like primitive can reach; the 62-task
+coverage lives entirely in the discrete grid-program solvers of the emergent union.
