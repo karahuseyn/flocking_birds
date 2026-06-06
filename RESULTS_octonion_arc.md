@@ -276,3 +276,41 @@ sharply: the gains come from **discrete grid-program primitives** — symmetry-a
 and substitution/fractal rewrites — never from continuous octonionic transport. Combined,
 octonion_full now stands at **68 / 1000 training** (8 → 36 → 53 → 59 → 62 → 66 → 68), 0 / 120 eval; the
 +2 are confirmed absent from the prior 66, with an end-to-end re-run as the final check.
+
+## Odrzywołek's single-operator EML, lifted to the octonions (math: yes; ARC: 0)
+
+arXiv:2603.21852 ("All elementary functions from a single operator") proves one binary operator
+`eml(x,y) = exp(x) − ln(y)` with the constant 1 generates the entire elementary-function repertoire
+— a uniform grammar `S → 1 | eml(S,S)`, the operator itself found by *exhaustive search* (a
+gradient-free program search, our own philosophy). We integrated it in two honestly separate layers
+(octonion_eml.py).
+
+**(1) Octonionic EML — a clean generalization, fully verified.** Lift exp, log to the octonions O.
+By Artin's theorem 1 and any imaginary v span a commutative ℂ-isomorphic subalgebra, so the complex
+formulas transport verbatim: `exp(q)=e^a(cos|v|+(v/|v|)sin|v|)`, `log(q)=ln|q|+(v/|v|)·atan2(|v|,a)`,
+and `EML_O(x,y)=exp(x)−log(y)`. The paper's single imaginary unit i becomes the **seven Fano units**:
+numerically verified to machine precision are `exp = EML_O(·,1)`, `exp(log q)=q`, the **7-unit Euler
+identity** `e^{e_k t}=cos t+e_k sin t` for every k=1..7, and the multiplication law
+`x·y=exp(log x+log y)` on each ℂ-subalgebra. So EML_O realises Euler rotations in all seven octonionic
+planes — the algebraic source of periodicity, tied directly to our Fano encoding. This is a genuine,
+correct piece of mathematics.
+
+**(2) Gradient-free EML symbolic regression on ARC — 0/1000, +0 novel.** We realised the grammar by
+bottom-up enumeration with observational-equivalence dedup over leaves {1, i, r, c, v} and the single
+operator eml (faithful to the paper's exhaustive search; strictly no backprop), seeking a closed form
+`colour(r,c,v)=round(Re(EML-tree))` reproducing every train cell exactly. It recovers the trivial laws
+(identity `out=in`, constant `out=k`) on synthetic tests but solves **0/1000** ARC training tasks.
+
+| solver | ARC training | ARC eval | novel over the 68 union |
+|---|---|---|---|
+| EML symbolic regression (real/complex, gradient-free enum.) | 0 / 1000 | 0 / 120 | 0 |
+
+The reason is precise and not a tuning gap. The paper's regression succeeds because **Adam tunes the
+continuous leaf constants**; our gradient-free enumeration has no tunable constants (only 1, i, and the
+variables), so it can reach only the *countable, constant-free* EML expressions — and oscillation
+needs i with a tuned frequency (real EML cannot oscillate at all). Worse, ARC's colourings are almost
+never closed-form elementary functions of (r,c,v): they are discrete, object- and context-dependent
+programs. So EML lands on the same discrete/continuous wall as the octonionic paths and the Kalman
+estimator — the analytic-function machinery is mathematically beautiful and, on a discrete-program
+benchmark, inert. The honest split stands: EML's contribution here is the verified octonionic
+generalization of a 2026 result, not ARC coverage; the 68 remains entirely discrete grid-program work.
