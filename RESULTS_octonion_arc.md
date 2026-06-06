@@ -314,3 +314,38 @@ programs. So EML lands on the same discrete/continuous wall as the octonionic pa
 estimator — the analytic-function machinery is mathematically beautiful and, on a discrete-program
 benchmark, inert. The honest split stands: EML's contribution here is the verified octonionic
 generalization of a 2026 result, not ARC coverage; the 68 remains entirely discrete grid-program work.
+
+## TRM-style recurrence, gradient-free — built, working, +0 novel (bottleneck is the vocabulary)
+
+TRM (Tiny Recursive Model) keeps a running answer and refines it over cycles by re-applying one small
+core trained by backprop. We kept the recurrence and dropped the backprop two ways.
+
+* **Cell-scale** (octonion_trm.py, pre-existing): each cell → a holographic 3×3 neighbourhood octon
+  (9 Fano-role bindings superposed); the rule is a nearest-neighbour carrier set in S⁷ (input
+  neighbourhoods → output colour, plus output→itself as the fixed point), iterated to convergence,
+  validated leave-one-out. Measured: **1/1000** single-shot, **0/1000** at the fixed point — iterating
+  the lossy nearest-neighbour lookup degrades it.
+
+* **Object-scale** (octonion_recurrent.py, new): the user's aim — a structure where every object-state
+  transforms into every other. The operator set induces a reachability graph on grids; an
+  ERROR-GUIDED BEAM (value = cell agreement + size proximity) finds a path input→output, re-solving
+  each step's rule from the current (state→target) pairs — the gradient-free analogue of TRM's latent
+  refinement. Forward moves = dihedral/crop/upscale/tile/mirror; closers = colour map, octonionic
+  affine+Fano, learned CA, the D4-equivariant Wolfram CA, and substitution/fractal. Measured:
+  **61/1000**, **+0 novel** over the 68 union.
+
+| recurrent solver | ARC training | ARC eval | novel over the 68 union |
+|---|---|---|---|
+| cell-scale octonionic TRM (fixed point) | 0–1 / 1000 | 0 / 120 | 0 |
+| object-scale error-guided beam (beam 8, cycles 4) | 61 / 1000 | 0 / 120 | 0 |
+
+The object-scale recurrence works and re-discovers most of the union through beam paths, but adds
+nothing new and even sits below the full union (61 < 68, missing octonion_paths and a few states the
+exhaustive DFS keeps). The lesson is the same one this file keeps measuring, now isolated cleanly: a
+*deeper / smarter recurrence over the same operators changes nothing*, because the reachable set is
+bounded by the **operator vocabulary**, not by search depth or strategy. octonion_layered already
+composes these operators; an error-guided cyclic refinement reaches the same fixed set. Genuine new
+coverage has only ever come from adding a new discrete grid-program *primitive* with the right
+structure (the D4-equivariant CA, the substitution/fractal rewrite) — not from a new way of searching
+or composing the primitives already present. The combined honest total stays **68/1000** training,
+0/120 eval.
