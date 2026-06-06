@@ -245,3 +245,34 @@ baseline counted one task this run does not; the robust, twice-checkable facts a
 the ~66 total). The evaluation set's novel abstractions remain out of reach of any finite learned rule
 library, but on the training distribution the symmetry-aware CA is a real, cheap (≈1 s), principled
 gain — and the progression now reads 8 → 36 → 53 → 59 → 62 → 66.
+
+## Wolfram used unconventionally — substitution systems / fractals (+2 novel, union → 68)
+
+The other half of Wolfram's computational universe is the one that PRODUCES fractals (Rule 90 →
+Sierpinski, nested tilings). Where the CA above is shape-preserving, a SUBSTITUTION SYSTEM
+σ : F → F^{a×b} expands every cell into an a×b block, taking a grid (H,W) to (aH, bW)
+(octonion_fractal.py). Two families, learned per colour from the task's own pairs and accepted only on
+EXACT reproduction:
+
+* **fixed stamp** — σ(c) is a constant, input-independent block ("every pixel of colour c becomes this
+  icon").
+* **self-referential / fractal** — the block written for a cell is the WHOLE input grid itself,
+  optionally recoloured, gated by a learned per-colour predicate: `out[block r,c] = T_c(g)` with
+  `T_c ∈ {g, recolour(g), constant fill}`. With `T_c = g` on a foreground predicate this nests g inside
+  g — the canonical ARC fractal, and a genuinely **nonlinear, input-dependent** transform: the same
+  rule yields a different, scale-coupled output for every grid, exactly the non-linearity a colour
+  bijection or an octonionic rotation cannot express.
+
+| family | ARC training | ARC eval | novel over the 66 union |
+|---|---|---|---|
+| **substitution / fractal (stamp + self-referential)** | **6 / 1000** (<1 s) | 0 / 120 | **+2** |
+
+The two novel solves, with a clean diagnostic: **2072aba6** (scale 2×2) is solved by the *fixed-stamp*
+family (each colour → a constant 2×2 icon); **cce03e0d** (scale 3×3) is solved by the *self-referential
+fractal* — a mix of `recolour(g)` for two colours and `g` itself for one, i.e. the input is tiled, at
+3× scale, as recoloured copies of itself wherever its cells fire. Neither overlaps the Wolfram-CA
+solves, confirming a distinct mechanism. This is the second additive lever, and it extends the picture
+sharply: the gains come from **discrete grid-program primitives** — symmetry-aware CA (D4-equivariant)
+and substitution/fractal rewrites — never from continuous octonionic transport. Combined,
+octonion_full now stands at **68 / 1000 training** (8 → 36 → 53 → 59 → 62 → 66 → 68), 0 / 120 eval; the
++2 are confirmed absent from the prior 66, with an end-to-end re-run as the final check.

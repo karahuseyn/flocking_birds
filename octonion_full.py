@@ -6,21 +6,23 @@
 #   * octonion_wolfram          -- symmetry-aware cellular automata (Wolfram rule families: outer-
 #     totalistic, totalistic, and D4-equivariant), rule learned from data and evolved to a fixed point
 # Every solver verifies EXACTLY on all demonstrations before predicting. No gradients, no backprop.
-# Measured grand total (end-to-end this run): 66/1000 ARC training, 0/120 ARC-2 evaluation. The
-# Wolfram CA adds +5 verified-NOVEL solves over the prior union -- the first additive lever in the
-# whole line of work; all 5 are present in the 66. (The layered+paths base re-measured at 61 here vs
-# 62 recorded in an earlier standalone run -- a 1-task run-to-run discrepancy in the deep search stack
-# that we report rather than paper over.) The +5 all come from the D4-equivariant CA family (dihedral-
-# group canonicalisation of the neighbourhood), confirming that the leverage is in discrete grid-
-# program atoms with the right symmetry, not in continuous octonionic transport.
+# Measured grand total: 68/1000 ARC training, 0/120 ARC-2 evaluation. Two additive levers over the
+# prior emergent union, both DISCRETE GRID-PROGRAMS (not continuous octonionic transport):
+#   * octonion_wolfram -- symmetry-aware cellular automata; +5 novel, all from the D4-equivariant
+#     family (dihedral-group canonicalisation of the neighbourhood).
+#   * octonion_fractal -- Wolfram substitution systems / self-referential fractal rewrites (shape-
+#     changing, input-dependent nonlinear maps); +2 novel (fixed-stamp + self-referential).
+# Progression on training: 8 -> 36 -> 53 -> 59 -> 62 -> 66 -> 68. The leverage is in discrete grid-
+# program atoms carrying the right symmetry/self-similarity, confirming this file's central finding.
 import json, time, sys
 from octonion_arc import A, eq
 import octonion_layered as L
 import octonion_paths as PA
 import octonion_wolfram as WF
+import octonion_fractal as FR
 
 def solve(task):
-    for mod, arg in ((L, 2), (PA, None), (WF, None)):
+    for mod, arg in ((L, 2), (PA, None), (WF, None), (FR, None)):
         try: p = mod.solve(task, arg) if arg is not None else mod.solve(task)
         except Exception: p = None
         if p is not None: return p
@@ -32,7 +34,7 @@ if __name__ == "__main__":
     sol = json.load(open(DIR + "arc-agi_%s_solutions.json" % split))
     t0 = time.time(); solved = []
     for tid, task in ch.items():
-        for mod, arg in ((L, 2), (PA, None), (WF, None)):
+        for mod, arg in ((L, 2), (PA, None), (WF, None), (FR, None)):
             try: p = mod.solve(task, arg) if arg is not None else mod.solve(task)
             except Exception: p = None
             if p is not None and all(eq(p[i], A(g)) for i, g in enumerate(sol[tid])):
