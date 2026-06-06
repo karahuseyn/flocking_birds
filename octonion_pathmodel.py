@@ -151,7 +151,9 @@ def _solve1(data, lam=1e-3, prior=None):       # one relation octon r:  o_out = 
 # pins the path, a principled overfit gate; (ii) optimal FUSION of a base-universe
 # prior, pulling r toward the learned atom ONLY in directions the data leaves
 # unconstrained (large P), never disturbing the data-constrained ones.  Gradient-free.
-def _kalman_path(X, Y, r0, P0, rmeas=2e-2, q=0.0):
+def _kalman_path(X, Y, r0, P0, rmeas=2e-2, q=0.0, cap=400):
+    if len(X) > cap:                                          # subsample cells: r is 8-D, a few hundred pin it
+        idx = np.linspace(0, len(X) - 1, cap).astype(int); X, Y = X[idx], Y[idx]
     r = r0.astype(float).copy(); P = P0.astype(float).copy(); I = np.eye(8); Rm = rmeas * I
     for i in range(len(X)):
         if q: P = P + q * I                                   # process noise -> tracks a drifting path

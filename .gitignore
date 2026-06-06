@@ -27,3 +27,4 @@ octonion_net_*.npz
 octonion_net_*.npz.done
 octonion_paramnet.npz
 octonion_pathmodel.npz
+_kalman_eval.py
