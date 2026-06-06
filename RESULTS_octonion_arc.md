@@ -201,7 +201,7 @@ composition (continuous and discrete), VQ symbols, and now Kalman/RLS — the gr
 machinery tops out exactly where its continuous, rotation-like primitive can reach; the 62-task
 coverage lives entirely in the discrete grid-program solvers of the emergent union.
 
-## Wolfram cellular automata — the first additive lever (+5 novel, 62 → 67)
+## Wolfram cellular automata — the first additive lever (+5 novel, union → 66)
 
 Acting on this file's own conclusion (the leverage is in discrete grid-program atoms with the right
 symmetry), we adapted Stephen Wolfram's cellular automata seriously (octonion_wolfram.py). An ARC
@@ -235,7 +235,13 @@ test grid. That |φ| = 9 distinct canonical neighbourhoods can determine an enti
 textbook Wolfram result: a very simple local rule, symmetry-reduced, reproduces a complex-looking grid
 map. This is the **first lever in the entire study that adds genuinely new coverage over the union**,
 and it does so by being exactly what the failed octonionic-path experiments were not: a *discrete
-grid-program* primitive carrying the *right symmetry*. Unioned into octonion_full, the gradient-free,
-no-predefined-transform total is **67 / 1000 training** (8 → 36 → 53 → 59 → 62 → 67), 0 / 120 eval —
-the evaluation set's novel abstractions remain out of reach of any finite learned rule library, but on
-the training distribution the symmetry-aware CA is a real, cheap (1 s), and principled gain.
+grid-program* primitive carrying the *right symmetry*. Unioned into octonion_full and re-run
+end-to-end, the gradient-free, no-predefined-transform total is **66 / 1000 training**, 0 / 120 eval.
+The +5 Wolfram-novel solves are all present in that 66 and were all absent from the prior union
+baseline, so the additive gain is solid; honestly noted, the layered+paths base re-measured at 61 in
+this end-to-end run versus 62 recorded in an earlier standalone run — a 1-task run-to-run discrepancy
+in the deep search stack that we report rather than hide (the deterministic code suggests the earlier
+baseline counted one task this run does not; the robust, twice-checkable facts are the +5 novel and
+the ~66 total). The evaluation set's novel abstractions remain out of reach of any finite learned rule
+library, but on the training distribution the symmetry-aware CA is a real, cheap (≈1 s), principled
+gain — and the progression now reads 8 → 36 → 53 → 59 → 62 → 66.

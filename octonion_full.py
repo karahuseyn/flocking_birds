@@ -6,11 +6,13 @@
 #   * octonion_wolfram          -- symmetry-aware cellular automata (Wolfram rule families: outer-
 #     totalistic, totalistic, and D4-equivariant), rule learned from data and evolved to a fixed point
 # Every solver verifies EXACTLY on all demonstrations before predicting. No gradients, no backprop.
-# Measured grand total: 67/1000 ARC training (the Wolfram CA adds +5 NOVEL over the prior 62 -- the
-# first additive lever in the whole line of work), 0/120 ARC-2 evaluation. Progression on training:
-# 8 -> 36 -> 53 -> 59 -> 62 -> 67. The +5 all come from the D4-equivariant CA family (dihedral-group
-# canonicalisation of the neighbourhood), confirming that the leverage is in discrete grid-program
-# atoms with the right symmetry, not in continuous octonionic transport.
+# Measured grand total (end-to-end this run): 66/1000 ARC training, 0/120 ARC-2 evaluation. The
+# Wolfram CA adds +5 verified-NOVEL solves over the prior union -- the first additive lever in the
+# whole line of work; all 5 are present in the 66. (The layered+paths base re-measured at 61 here vs
+# 62 recorded in an earlier standalone run -- a 1-task run-to-run discrepancy in the deep search stack
+# that we report rather than paper over.) The +5 all come from the D4-equivariant CA family (dihedral-
+# group canonicalisation of the neighbourhood), confirming that the leverage is in discrete grid-
+# program atoms with the right symmetry, not in continuous octonionic transport.
 import json, time, sys
 from octonion_arc import A, eq
 import octonion_layered as L
