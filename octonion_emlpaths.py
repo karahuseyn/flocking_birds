@@ -73,11 +73,23 @@ def _close(cur, outs, cur_tests):
 def _sig(states):                                # observational-equivalence signature (train states)
     return tuple(s.tobytes() + repr(s.shape).encode() for s in states)
 
-def solve(task, depth=3, cap=4000):
+def _score(cur, outs):                            # TRM-style value: progress toward the target
+    s = 0.0
+    for c, o in zip(cur, outs):
+        c = A(c); o = A(o)
+        if c.shape == o.shape: s += float((c == o).mean())
+        else:
+            dh = abs(c.shape[0] - o.shape[0]); dw = abs(c.shape[1] - o.shape[1]); s += 0.3 / (1 + dh + dw)
+    return s / len(outs)
+
+def solve(task, depth=3, cap=4000, beam=0):
+    """beam=0: exact equivalence-class BFS (bounded by cap).  beam>0: MULTISTEP
+    RECURSIVE refinement -- at each cycle keep the top-`beam` equivalence classes by
+    progress toward the target (TRM-style), letting the recursion reach greater depth
+    tractably."""
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
     ins = [i for i, _ in pairs]; outs = [o for _, o in pairs]
     tests = [A(tp["input"]) for tp in task["test"]]
-    # frontier nodes: (train_states, test_states, program)
     frontier = {_sig(ins): (ins, tests, [])}
     seen = set(frontier)
     for d in range(depth + 1):
@@ -95,8 +107,11 @@ def solve(task, depth=3, cap=4000):
                 k = _sig(ns)
                 if k in seen: continue
                 seen.add(k); nxt[k] = (ns, nt, prog + [name])
-                if len(seen) > cap: break
-            if len(seen) > cap: break
+                if beam == 0 and len(seen) > cap: break
+            if beam == 0 and len(seen) > cap: break
+        if beam > 0 and len(nxt) > beam:             # recursive refinement: keep best partial answers
+            top = sorted(nxt.items(), key=lambda kv: -_score(kv[1][0], outs))[:beam]
+            nxt = dict(top)
         frontier = nxt
         if not frontier: break
     return None
@@ -105,11 +120,12 @@ def solve(task, depth=3, cap=4000):
 if __name__ == "__main__":
     DIR = "arc_data/"; split = sys.argv[1] if len(sys.argv) > 1 else "training"
     depth = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    beam = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     ch = json.load(open(DIR + "arc-agi_%s_challenges.json" % split))
     sol = json.load(open(DIR + "arc-agi_%s_solutions.json" % split))
     t0 = time.time(); solved = []
     for tid, task in ch.items():
-        try: pr = solve(task, depth)
+        try: pr = solve(task, depth, beam=beam)
         except Exception: pr = None
         if pr and all(eq(pr[i], A(g)) for i, g in enumerate(sol[tid])): solved.append(tid)
     print("EML-PATHS (equivalence-class composition network, depth %d): %d / %d  %s  (%.0fs)"
