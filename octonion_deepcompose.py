@@ -26,8 +26,9 @@ import octonion_fractal as FR
 import octonion_combine as CB
 import octonion_objsel as OS
 import octonion_symrepair as SR
+import octonion_objrules as ORU
 
-MODS = [WF, FR, CB, OS, SR]
+MODS = [WF, FR, CB, OS, SR, ORU]                  # full mechanism vocabulary as closers
 
 def _close(cur, outs, cur_tests):
     pairs = list(zip(cur, outs))
