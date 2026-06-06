@@ -439,3 +439,22 @@ universal one. Raising training coverage (now 98/1000) and raising eval coverage
 benchmark, nearly independent goals; the eval set demands compositional/novel abstraction that no
 finite library of cleanly-verifiable single mechanisms supplies. Final honest status: **98/1000
 training, 0/120 eval.**
+
+## Three more mechanisms — training 98 → 111 (+13), eval still 0
+
+Continuing to grow the vocabulary along NEW mechanisms (octonion_objrules.py), all parametric,
+un-named, exact-verified:
+
+* **object recolour by property** — segment, learn a map from a per-object key (size / bbox-area /
+  #colours / D4-canonical shape / colour / size-rank) to an output colour, repaint each object.
+* **gravity / projection** — per row/column compact every non-background cell toward one of the four
+  edges (a 4-direction geometric family, like the dihedral group; not a per-task named op).
+* **enclosed-region fill** — background cells not connected to the border are holes; fill with a
+  learned colour (background = the border-dominant colour).
+
+Result: **13/1000 training, +13 NOVEL** over the 98 union (00d62c1b, 08ed6ac7, 1d61978c, 1e0a9b12,
+3906de3d, 6e82a1ae, 9565186b, a5313dff, ad38a9d0, ae58858e, b230c067, e8593010, ea32f347), lifting the
+union to **111/1000**; **0/120 eval**, consistent with every other mechanism. (Note 1e0a9b12 and
+3906de3d were the bio-net's two robust novel solves from the top of this file — now recovered cleanly
+by an explicit gravity/recolour mechanism.) Progression: 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 →
+**111** on training; 0/120 eval throughout.
