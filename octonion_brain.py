@@ -90,6 +90,8 @@ def _route(pairs):
     elif f["shrink"]: order = [G2, CB, OS, PA, L, WF, ORU, RY, SR, MO, FR, FFA, EP]
     elif f["sh_eq"]: order = [WF, ORU, RY, SR, MO, CB, OS, G2, PA, L, FR, FFA, EP]
     else:           order = [CB, OS, PA, G2, L, WF, ORU, RY, SR, MO, FR, FFA, EP]
+    if os.environ.get("BRAIN_FAST") == "1":          # drop the slow recursive layer for a quick pass
+        order = [m for m in order if m is not EP]
     return order
 
 # ----------------------------------------------------------------- (4) recurrent prediction
