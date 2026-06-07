@@ -589,3 +589,13 @@ which the literal fractal had missed — and 5b6cbef5) → union **129/1000**; *
 positive: the functional/recursive generalisation of the fractal, expressed through the octonionic
 symmetry group, recovers the archetypal fractal task plus one more. Progression:
 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → 120 → 122 → 127 → **129** training, 0/120 eval.
+
+**Deepening the recursion (genuine nested depth k≥2) is now correct but adds +0 on ARC.** The first
+OFFA only truly executed one level (the k>1 learner failed on shape); we added a correct recursive
+nested solver where each active cell stamps the deeper fractal F_{k-1}(g), self-similar across k
+levels, validated on a synthetic depth-2 fractal (2×2 → 8×8, S = Hi²). On ARC it still solves the same
+3/1000, **+0 novel** over 129: multi-level self-similar fractals (3 → 27 → …) simply do not occur in
+the ARC-2 training split — only depth-1 fractals do. The recursion is real and verified; the data does
+not exercise it. Union holds at **129/1000 training, 0/120 eval**. This is consistent with the whole
+study: deeper recursion is correct and free to use, but coverage is bounded by which mechanisms the
+tasks actually instantiate, not by how deeply we can recurse.

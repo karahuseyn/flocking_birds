@@ -118,18 +118,62 @@ def _run(g, rule, a, b, k):
 def solve(task):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
     tests = [A(tp["input"]) for tp in task["test"]]
+    r = _nested(pairs, tests)                                 # genuine multi-level recursion first
+    if r is not None: return r
     Hi, Wi = pairs[0][0].shape; Ho, Wo = pairs[0][1].shape
     dr = _depth_ratio(Hi, Wi, Ho, Wo)
     if dr is None: return None
     a, b, k = dr
-    if k > 1: a, b = Hi, Wi                                   # nested: block grid = input shape each level
-    rule = _learn(pairs, a, b, 1)                            # rule learned at level-1 granularity
+    if k > 1: a, b = Hi, Wi
+    rule = _learn(pairs, a, b, 1)
     if rule is None: return None
     for i, o in pairs:
-        r = _run(i, rule, a, b, k)
-        if r is None or not eq(r, o): return None
+        rr = _run(i, rule, a, b, k)
+        if rr is None or not eq(rr, o): return None
     pr = [_run(t, rule, a, b, k) for t in tests]
     if any(p is None for p in pr): return None
+    return [A(p) for p in pr]
+
+# ---- genuine recursive (nested, self-similar) fractal: each active cell stamps F_{k-1}(g) ----
+def _bgc(g):
+    g = A(g)
+    return 0 if (g == 0).any() else int(np.bincount(g.ravel()).argmax())
+
+def _nested(pairs, tests, kmax=3):
+    Hi, Wi = pairs[0][0].shape; Ho, Wo = pairs[0][1].shape
+    if Hi == 0 or Wi == 0 or Ho % Hi or Wo % Wi: return None
+    S = Ho // Hi
+    if S != Wo // Wi: return None
+    # find depth k with S == Hi**k == Wi**k  (self-similar block grid = input shape, applied k levels)
+    k = None
+    for kk in range(2, kmax + 1):
+        if Hi ** kk == S and Wi ** kk == S: k = kk; break
+    if k is None: return None
+    # learn the active predicate per colour (a cell is active iff its top super-block is non-background)
+    amap = {}
+    for gi, go in pairs:
+        gi = A(gi); go = A(go); bg = _bgc(gi)
+        if go.shape != (Hi * S, Wi * S): return None
+        for r in range(Hi):
+            for c in range(Wi):
+                sb = go[r * S:(r + 1) * S, c * S:(c + 1) * S]
+                act = bool((sb != bg).any())
+                col = int(gi[r, c])
+                if amap.get(col, act) != act: return None
+                amap[col] = act
+    def build(g, kk, bg):
+        g = A(g)
+        if kk == 0: return g
+        inner = build(g, kk - 1, bg); ih, iw = inner.shape; H, W = g.shape
+        out = np.full((H * ih, W * iw), bg, int)
+        for r in range(H):
+            for c in range(W):
+                if amap.get(int(g[r, c]), False):
+                    out[r * ih:(r + 1) * ih, c * iw:(c + 1) * iw] = inner
+        return out
+    for gi, go in pairs:
+        if not eq(build(gi, k, _bgc(gi)), go): return None
+    pr = [build(t, k, _bgc(t)) for t in tests]
     return [A(p) for p in pr]
 
 
