@@ -518,3 +518,17 @@ path becomes reachable. The gain is small (+2) and confirms the boundary precise
 only when it both searches completely AND has new atoms to compose — and even then only marginally,
 versus +25/+13/+5 for outright new mechanisms. Progression on training:
 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → 120 → **122**; eval flat at 0/120.
+
+**Making the EML network multistep-recursive (deeper) is computationally intractable here for a marginal
+gain.** We added a TRM-style recursive mode (octonion_emlpaths, beam>0: keep the top equivalence
+classes by progress toward the target each cycle, recurse to greater depth). In practice depth-3 did
+not finish in over an hour even at beam 40 (and >1 h at beam 150) on the 1000 training tasks: the cost
+is the per-node closer — `single_step` runs RANSAC `IC.infer` at every kept equivalence class, times
+beam times depth times 1000. Given depth-2 yielded only +2 and the whole study shows composition
+saturating, the expected marginal gain (≈+0–3) does not justify the cost, so the runs were stopped.
+The EML network's verified contribution stays at its depth-2 value (+2). The recursive mode is kept in
+the code (beam parameter) for the record, but octonion_full uses the exact depth-2 BFS. **Final honest
+union: 122/1000 training, 0/120 eval.** This closes the composition/recursion line cleanly: deeper
+recursion over the same vocabulary is either saturating (greedy beam: +0) or intractable for marginal
+gain (exact deep: +2 at depth 2, untestably slow beyond) — the durable lever remains adding new
+discrete grid-program mechanisms, of which the union now has thirteen.
