@@ -599,3 +599,24 @@ the ARC-2 training split — only depth-1 fractals do. The recursion is real and
 not exercise it. Union holds at **129/1000 training, 0/120 eval**. This is consistent with the whole
 study: deeper recursion is correct and free to use, but coverage is bounded by which mechanisms the
 tasks actually instantiate, not by how deeply we can recurse.
+
+## The unified bio-octonionic brain — and the honest single-prediction score (108)
+
+octonion_brain.py consolidates the whole line of work into one deeper/cyclic/recursive system with
+four layers: (1) a bio-octonionic REPRESENTATION (reciprocal conjugate I/O, Dale's-principle inhibitory
+damping, lateral inhibition / centre-surround); (2) a holographic FANO-PATH descriptor that ROUTES a
+task to a mechanism ordering by its structural signature (shape-preserving / growing / shrinking);
+(3) the full fourteen-mechanism repertoire; (4) a recurrent PREDICTION controller — route, apply, else
+recurse via the EML equivalence-class composition network — verifying exactly and replaying on the test.
+
+This exposes a number the optimistic "union" hid. The 129 figure is an *oracle union*: a task counts if
+ANY mechanism's prediction is correct. A real solver must commit to ONE answer. The brain, giving a
+single routed prediction per task, scores **108 / 1000 training, 0 / 120 eval** — and misses 21 of the
+129 not for lack of a solver but because, on those tasks, several mechanisms reproduce all training
+demonstrations yet disagree on the test grid, and the routed order commits to one that generalises
+wrong. This ambiguity cost (129 oracle → 108 committed) is the honest single-attempt pipeline score and
+a more faithful ARC number than the union. ARC permits two attempts; collecting the first two distinct
+candidate predictions across the routed mechanisms (pass@2) recovers much of the gap toward 129 (see the
+brain `p2` mode). The architecture is the deliverable — representation, Fano routing, mechanisms and
+recursive prediction in one gradient-free, no-predefined-transform system — and it also delivers the
+study's most honest headline metric: **108/1000 committed single-prediction training, 0/120 eval.**

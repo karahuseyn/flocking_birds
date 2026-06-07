@@ -106,16 +106,47 @@ def solve(task):
         if p is not None: return p
     return None
 
+def candidates(task, k=2):
+    """ARC allows two attempts.  Collect distinct test-predictions from the routed
+    mechanisms (each already train-exact) and return the first k -- pass@k."""
+    pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
+    order = _route(pairs); out = []; seen = set()
+    for mod in order:
+        try:
+            p = mod.solve(task, 2) if mod is L else mod.solve(task)
+        except Exception:
+            p = None
+        if p is None: continue
+        key = tuple(A(x).tobytes() + repr(A(x).shape).encode() for x in p)
+        if key in seen: continue
+        seen.add(key); out.append([A(x) for x in p])
+        if len(out) >= k: break
+    return out
+
 
 if __name__ == "__main__":
     DIR = "arc_data/"; split = sys.argv[1] if len(sys.argv) > 1 else "training"
     ch = json.load(open(DIR + "arc-agi_%s_challenges.json" % split))
     sol = json.load(open(DIR + "arc-agi_%s_solutions.json" % split))
-    t0 = time.time(); solved = []
+    p2 = len(sys.argv) > 2 and sys.argv[2] == "p2"
+    t0 = time.time(); s1 = []; s2 = []
     for tid, task in ch.items():
-        try: pr = solve(task)
-        except Exception: pr = None
-        if pr and all(eq(pr[i], A(g)) for i, g in enumerate(sol[tid])): solved.append(tid)
-    print("OCTONIONIC BRAIN (bio repr + Fano routing + 14 mechanisms + recursion): %d / %d  %s  (%.0fs)"
-          % (len(solved), len(ch), split, time.time() - t0))
-    open("/tmp/brain_%s.ids" % split, "w").write(" ".join(solved))
+        if p2:
+            cs = candidates(task, 2)
+            for ci, pr in enumerate(cs):
+                if all(eq(pr[i], A(g)) for i, g in enumerate(sol[tid])):
+                    s2.append(tid);
+                    if ci == 0: s1.append(tid)
+                    break
+        else:
+            try: pr = solve(task)
+            except Exception: pr = None
+            if pr and all(eq(pr[i], A(g)) for i, g in enumerate(sol[tid])): s1.append(tid)
+    if p2:
+        print("OCTONIONIC BRAIN pass@2: %d/%d (attempt1 %d)  %s  (%.0fs)"
+              % (len(s2), len(ch), len(s1), split, time.time() - t0))
+        open("/tmp/brain_%s.ids" % split, "w").write(" ".join(s2))
+    else:
+        print("OCTONIONIC BRAIN (bio repr + Fano routing + 14 mechanisms): %d / %d  %s  (%.0fs)"
+              % (len(s1), len(ch), split, time.time() - t0))
+        open("/tmp/brain_%s.ids" % split, "w").write(" ".join(s1))
