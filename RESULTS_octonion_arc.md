@@ -542,3 +542,16 @@ each connected object — or each colour group — to its bounding box, fill or 
 gradient-free, exact-verified. Result: **5/1000 training, +5 novel** (5614dbcf, 56ff96f3, 5783df64,
 68b67ca3, e57337a4) → union **127/1000**; **0/120 eval**. Progression:
 8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → 120 → 122 → **127** training, flat 0/120 eval.
+
+### Diminishing returns set in (morphology / frequency / counting: +0)
+
+octonion_morph.py added four more generic mechanisms — dilation, object outline/halo, keep/remove by
+colour frequency, and count→line (object count as a coloured strip). Verified on synthetic cases, but
+on ARC it solved only **1/1000 and +0 novel** over the 127 union: these families are either rare in
+the training split or already covered by existing mechanisms (e.g. dilation by the learned CA, outline
+by bbox/CA). It is not wired into octonion_full (no benefit). This is the honest saturation signal:
+the easy, high-frequency mechanisms have been harvested (panel +25, objrules +13, then +5, +5, +4,
++2…, now +0). Remaining training tasks need increasingly specific or multi-step-compositional
+mechanisms, where each addition costs more and returns less. The union holds at **127/1000 training,
+0/120 eval** with thirteen contributing mechanisms; pushing higher is possible but now firmly in
+diminishing-returns territory, and — as established throughout — none of it moves evaluation.
