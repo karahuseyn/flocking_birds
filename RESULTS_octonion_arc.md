@@ -532,3 +532,13 @@ union: 122/1000 training, 0/120 eval.** This closes the composition/recursion li
 recursion over the same vocabulary is either saturating (greedy beam: +0) or intractable for marginal
 gain (exact deep: +2 at depth 2, untestably slow beyond) — the durable lever remains adding new
 discrete grid-program mechanisms, of which the union now has thirteen.
+
+## Three more mechanisms — training 122 → 127 (+5), eval still 0
+
+octonion_grid2.py: **block reduce** (input is a regular grid of blocks by integer ratio or full-line
+separators; output summarises each block to one cell — its unique non-bg / dominant colour, "region →
+cell"), **frame** (add/remove a learned-colour border of thickness 1–2), and **bbox fill** (solidify
+each connected object — or each colour group — to its bounding box, fill or outline). Un-named,
+gradient-free, exact-verified. Result: **5/1000 training, +5 novel** (5614dbcf, 56ff96f3, 5783df64,
+68b67ca3, e57337a4) → union **127/1000**; **0/120 eval**. Progression:
+8 → 36 → 53 → 59 → 62 → 68 → 93 → 96 → 98 → 111 → 116 → 120 → 122 → **127** training, flat 0/120 eval.
