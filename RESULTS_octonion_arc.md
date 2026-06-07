@@ -555,3 +555,21 @@ the easy, high-frequency mechanisms have been harvested (panel +25, objrules +13
 mechanisms, where each addition costs more and returns less. The union holds at **127/1000 training,
 0/120 eval** with thirteen contributing mechanisms; pushing higher is possible but now firmly in
 diminishing-returns territory, and — as established throughout — none of it moves evaluation.
+
+### Tetris-block shapes in the octonion representation (descriptor: correct; ARC: +0)
+
+octonion_shapes.py carries polyomino ("Tetris-block") shapes in the octonion representation: each
+filled cell's bbox-centred (×2, integer) offset is bound by a 2-D Fano positional code
+`role(dr,dc)=Rrow^dr ⊗ Rcol^dc` (octonion powers, Artin-associative), summed over K=8 independent codes
+and reduced by D4-orbit-min to a rotation/reflection-INVARIANT signature. **The representation is
+validated and correct**: on synthetic blocks it is exactly D4-invariant, the 7 one-sided tetrominoes
+collapse to the 5 free tetrominoes (S=Z and L=J chirality confirmed), and 60 random polyominoes are
+invariant and largely distinct — a genuinely octonionic, mathematically clean shape code. The ARC
+mechanism keys each object by this signature and learns shape→colour (recolour each shape by its
+identity), exact-verified. Result: **1/1000 training, +0 novel** over the 127 union, **0/120 eval**,
+and slow (~47 min, the per-object 8×K octonion-power signature). Recolour-by-shape tasks are already
+covered (objrules recolour-by-property, colormap) or rare, so the shape descriptor — correct and
+elegant as it is — adds no ARC coverage. Not wired into octonion_full. This confirms the saturation
+from two independent directions (morph +0, shapes +0): the octonion shape representation faithfully
+encodes Tetris blocks and their D4 transformations, but the remaining ARC training tasks are not
+shape-recolour tasks. Union holds at **127/1000 training, 0/120 eval**.
