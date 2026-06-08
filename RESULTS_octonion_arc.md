@@ -640,3 +640,33 @@ when discrete grid-program closers were allowed to finish). Everything above tha
 108/129 — came from discrete grid-program mechanisms, not from the octonion algebra. The pure network
 is faithful to the thesis, gradient-free, and entirely free of predefined transforms; its measured
 reach is the discrete/continuous boundary, exactly as the rest of this file documents.
+
+## Adding gradients, TRM-style — the first method to BEAT the discrete union (+9, → 138)
+
+octonion_otrm.py introduces the project's first gradient, deliberately and minimally, as in TRM where
+only the last stage carries gradients. The recursion stays pure/gradient-free octonionic: each cell's
+Fano-context octon is refined by T steps of octonionic message passing (a fixed-point latent, TRM-
+style). A tiny 2-layer MLP readout then maps the refined per-cell octonionic features
+(colour one-hot ⊕ contexts ⊕ recursive latent, 42-D) to a colour, trained per task by manual Adam
+(test-time training). Accepted only if the trained head reproduces every training cell exactly, then
+the test grid is predicted. Shape-preserving tasks.
+
+Measured (training): **23/1000 solved, train-fit 200, eval 0/120**. Two readings, both important:
+* **Gradients adapt and over-fit, exactly as expected.** The 2-layer head fits the training cells of
+  200/1000 tasks (real gradient capacity) but generalises to the test grid on only 23 — an ~11%
+  generalisation rate, the classic gradient over-fit, in sharp contrast to the closed-form octonionic
+  operator which either generalises exactly or returns nothing (pure: 4/4 generalise).
+* **Yet gradients add genuinely NEW coverage: +9 novel over the gradient-free 129 union** (25d8a9c8,
+  32597951, 3aa6fb7a, 67385a82, 95990924, a9f96cdd, c0f76784, d364b489, e0fb7511; 3 re-verified
+  independently). These are shape-preserving per-cell maps that no discrete mechanism captures but a
+  gradient-trained readout on the octonionic recursive features does generalise. This is the **first
+  method in the whole study to exceed the discrete-mechanism union** — the combined total with the
+  gradient layer is **138/1000 training** (octonion_full stays gradient-free at 129; O-TRM is kept
+  separate to preserve that distinction). Eval stays **0/120**: gradients raise training coverage but,
+  like every other lever, do not cross the ARC-2 evaluation wall.
+
+The honest answer to "how does the octonionic system take to gradients": well enough to over-fit
+freely (200 train-fits) and to add 9 generalising solves the algebra and the discrete mechanisms both
+miss — a real, if modest and over-fit-prone, gain — while leaving the evaluation ceiling untouched.
+Final picture: pure octonionic 4 → gradient-free discrete union 129 → with a TRM-style gradient head
+138, all at 0/120 eval.
