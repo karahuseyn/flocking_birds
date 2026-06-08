@@ -670,3 +670,28 @@ freely (200 train-fits) and to add 9 generalising solves the algebra and the dis
 miss — a real, if modest and over-fit-prone, gain — while leaving the evaluation ceiling untouched.
 Final picture: pure octonionic 4 → gradient-free discrete union 129 → with a TRM-style gradient head
 138, all at 0/120 eval.
+
+### Eliminating the over-fit — and what it reveals (the robust gradient gain is +3, not +9)
+
+v1's 138 came at precision 0.115 (23 test-solves out of 200 tasks whose train cells the head fit) — a
+memorising gradient head.  octonion_otrm2.py removes the over-fit by construction: hold out one whole
+training pair, require K seeds (trained on the rest) to reproduce it EXACTLY (whole-grid generalisation
+proof, not memorisation) AND to agree on the test prediction, then retrain on all and commit.  The
+precision/recall frontier, measured:
+
+| gate | solved | accepted | precision |
+|---|---|---|---|
+| none (v1) | 23 | 200 | 0.115 (over-fit) |
+| ensemble agreement (K seeds agree on test) | 16 | 28 | 0.57 |
+| **held-out-pair + ensemble** | **13** | **14** | **0.93** |
+
+The strict gate gives precision 0.93 — over-fit essentially eliminated.  And it exposes the honest
+truth about v1's nine "novel" gradient solves: only **three survive** generalisation gating
+(3aa6fb7a, d364b489, e0fb7511); the other six did not reproduce a held-out training pair and were
+fragile lucky fits, i.e. over-fit coincidences.  So the TRUSTWORTHY gradient contribution over the
+gradient-free 129 union is **+3, not +9** → a reliable, high-precision **132/1000 training**, still
+**0/120 eval**.  This is the project's cleanest statement on gradients: added minimally (a 2-layer head
+on gradient-free octonionic recursion), they do extend coverage, but most of the raw gain is
+over-fit; once generalisation is enforced, the durable gradient gain is small (+3) and, like every
+other lever, does not touch evaluation.  Pure octonionic 4 → discrete union 129 → robust gradient head
+132, all 0/120 eval.
