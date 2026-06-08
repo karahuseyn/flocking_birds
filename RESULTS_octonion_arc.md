@@ -620,3 +620,23 @@ candidate predictions across the routed mechanisms (pass@2) recovers much of the
 brain `p2` mode). The architecture is the deliverable — representation, Fano routing, mechanisms and
 recursive prediction in one gradient-free, no-predefined-transform system — and it also delivers the
 study's most honest headline metric: **108/1000 committed single-prediction training, 0/120 eval.**
+
+## Back to a PURE octonionic network — the honest pure ceiling (4/1000)
+
+Setting the whole mechanism repertoire aside (it edges toward a "predefined" feel, even though every
+mechanism is parametric and fit per task), octonion_pure.py returns to the original thesis: a network
+whose ONLY operation is octonion multiplication, with NO mechanism bank and nothing named. Fano-path
+octonion sub-networks build a hierarchy of sub-representations — ctx_s(cell) = unit(Σ ROLE_s[d] ⊗
+Φ(nb_d)) at receptive fields self / von Neumann / Moore — and per input colour the relation octon r is
+solved in closed form (R(ctx) r = o_out), with network depth an octonionic walk r2 ⊗ (r1 ⊗ ctx) fit by
+alternating least squares. Accepted only on exact reproduction, decoded to the nearest colour.
+
+Result: **4/1000 training, 0/120 eval** — the four are pure colour/rotation tasks (0d3d703e, b1948b0a,
+c8f0f002, d511f180), all inside the mechanism union. This is the clean, honest **pure-octonionic
+ceiling**, and it states the project's central truth in one number: a continuous octonionic operator,
+however richly sub-represented through Fano-path sub-networks and however deep the octonionic walk,
+expresses only the rotation-like / colour-rotation slice of ARC under exact verification (here 4; ~7
+when discrete grid-program closers were allowed to finish). Everything above that — the climb to
+108/129 — came from discrete grid-program mechanisms, not from the octonion algebra. The pure network
+is faithful to the thesis, gradient-free, and entirely free of predefined transforms; its measured
+reach is the discrete/continuous boundary, exactly as the rest of this file documents.
