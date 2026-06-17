@@ -719,3 +719,35 @@ So the honest trade is clean: inverse "backprop" = fast + exact + low recall; gr
 over-fit-prone + higher recall (durable +3). Neither moves eval (0/120). The octonion algebra does give
 a real, gradient-free, closed-form alternative to back-propagation; it just does not learn features, so
 on ARC it lands back at the pure-octonionic-style coverage, only now through a random-feature inverse.
+
+### A network that LEARNS like backprop with zero gradients — octonionic target propagation
+
+octonion_otpn.py is the strongest form of the request: a multi-layer octonionic network trained
+backprop-STYLE — forward pass, a BACKWARD signal through the layers, per-layer weight updates — but with
+no gradient anywhere.  The backward signal is a TARGET propagated through each layer by the octonion
+INVERSE (division algebra: every layer is invertible), and each layer's weights are fit in closed form
+(`o = W ⊗ v` is linear in `W` through `R(v)`, so octonionic least squares).  Credit assignment is purely
+algebraic.  It genuinely **learns**: on 25ff71a9 the loss ‖z − t_z‖ falls 0.703 → 0.41 over passes and
+train cell-accuracy reaches 0.944 — a real backprop-free learning curve.
+
+On ARC, under the exact-reproduction + held-out-pair gate, it solves **1/1000 (precision 1.00), 0/120
+eval**: target propagation converges to ~94% cell accuracy, not the exact grids ARC demands, so the gate
+rejects almost everything.  The full comparison of "how to train the readout on octonionic features",
+all on the same gate:
+
+| training rule | gradients | train solved | precision | time/1000 |
+|---|---|---|---|---|
+| pure closed-form octonionic operator | no | 4 | exact | ~3 min |
+| inverse / ELM (random basis + ridge) | no | 4 | 1.00 | 27 s |
+| **octonionic target propagation (OTPN)** | **no** | **1** | 1.00 | ~4 min |
+| gradient MLP head, gated | yes | 13 | 0.93 | ~17 min |
+| gradient MLP head, ungated | yes | 23 | 0.115 | ~17 min |
+
+The synthesis on learning rules: the octonion algebra DOES give genuine gradient-free learning —
+closed-form inverse (fast, exact, recall 4), and multi-layer target propagation (a true learning curve,
+0.944 fit) — but none reproduces ARC's exact grids as often as gradient feature-learning (13), and even
+that mostly over-fits (precision 0.115 → 0.93 only after gating, durable +3). Across every learning rule
+the evaluation score is 0/120. Backprop can be replaced by octonionic inverse / target propagation and
+it learns; on this exact-match symbolic benchmark, learning the readout — by any rule — is not where the
+coverage comes from. The coverage is, as the whole study shows, in the discrete grid-program mechanisms
+(gradient-free union 129; with the durable gradient head 132).
