@@ -695,3 +695,27 @@ on gradient-free octonionic recursion), they do extend coverage, but most of the
 over-fit; once generalisation is enforced, the durable gradient gain is small (+3) and, like every
 other lever, does not touch evaluation.  Pure octonionic 4 → discrete union 129 → robust gradient head
 132, all 0/120 eval.
+
+### Replacing backprop with a closed-form INVERSE — fast and exact, but lower recall
+
+Can the readout's "back-propagation" be done by the octonion algebra's invertibility instead of gradient
+descent?  Yes.  octonion_otp.py uses an Extreme-Learning-Machine head on the same octonionic recursive
+features: a fixed RANDOM hidden projection (ReLU), then the output weights solved in ONE shot by the
+ridge normal equations W = (HᵀH+λI)⁻¹HᵀY — the matrix inverse stands in for backprop.  Same held-out-
+pair + ensemble gate.  Measured against the gradient head:
+
+| readout | train solved | precision | training time | novel/129 |
+|---|---|---|---|---|
+| gradient MLP, ungated (v1) | 23 | 0.115 | ~17 min | +9 (6 over-fit) |
+| gradient MLP, gated (v2) | 13 | 0.93 | ~17 min | +3 |
+| **inverse / closed-form (ELM), gated** | **4** | **1.00** | **27 s** | 0 |
+
+The closed-form inverse is **~37× faster** (27 s vs ~17 min for the full 1000) and **perfectly precise**
+(4/4 accepted correct), confirming the algebraic-inverse route to "training" works and is cheap.  But
+its **recall is lower** (4 vs the gradient head's 13): a fixed random basis + a linear inverse solve
+captures only what that basis already separates, whereas gradient descent *learns* the hidden
+representation and so reaches more tasks (at 37× the cost and with over-fit risk that needs gating).
+So the honest trade is clean: inverse "backprop" = fast + exact + low recall; gradient backprop = slow +
+over-fit-prone + higher recall (durable +3). Neither moves eval (0/120). The octonion algebra does give
+a real, gradient-free, closed-form alternative to back-propagation; it just does not learn features, so
+on ARC it lands back at the pure-octonionic-style coverage, only now through a random-feature inverse.
