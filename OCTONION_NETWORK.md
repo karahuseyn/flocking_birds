@@ -71,3 +71,24 @@ octon-network representation) is correct. So the network's redundant-representat
 hand-drawn design's "one object, many encodings" — delivers a genuine new ARC solve through the second
 attempt, lifting the combined union to 130. The cellular recursion reaches a strong single-pipeline
 score (104 committed) and the redundant cells turn ARC's two-attempt budget into real coverage.
+
+## Morph-path: intermediate states between input and output (TRM-like) — measured 0
+
+A faithful try at the "insert N intermediate states that gradually morph input→output, learn the
+step transformation, apply the path at test" idea (octonion_morphpath.py). The intermediates are not
+given, so we construct them as a self-consistent propagation wave (a change-cell flips to its target
+when a neighbour already shows that value), collect every consecutive (state_t → state_{t+1}) transition
+as deep supervision, learn one octonionic local rule, iterate it to a fixed point, and accept only on
+exact endpoint reproduction. Validated on a synthetic flood-grow task (9 constructed states, solved).
+
+On ARC: **0/1000 training, 0/120 eval.** Diagnostic on the 680 same-shape tasks: 125 admit a completable
+propagation morph, 38 of those yield a consistent per-step rule, but **none** iterate-reproduce the
+endpoints and generalise. Two honest reasons: (i) the constructed wave flips cells using the *target*
+(global) information, while the learnable per-step rule sees only the local patch — the two dynamics
+diverge when the rule is run freely, so the fixed point misses the endpoint; (ii) the slice this could
+cover (neighbour-matching propagation) is already subsumed by the iterated Wolfram CA in the union, so
+even a success would be 0 novel. The deeper lesson, consistent with the whole study: the hard part is
+*constructing the right intermediates*, which needs the transform you are trying to learn — circular;
+one principled construction (propagation) covers a small, already-covered slice. The TRM-style morph
+path is elegant and works on clean iterative dynamics, but on ARC's discrete one-shot programs it adds
+nothing over the discrete-mechanism repertoire.
