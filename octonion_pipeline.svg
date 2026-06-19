@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1047" font-family="monospace">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#333"/></marker></defs>
+<rect width="960" height="1047" fill="white"/>
+<text x="40" y="28" font-size="20" font-weight="bold" fill="#111">Octonionic gradient-free pipeline &#8212; prompt &#8594; composed answer</text>
+<rect x="40" y="50" width="880" height="124" rx="8" fill="#dce6f2" stroke="#1f4e79" stroke-width="1.5"/>
+<rect x="40" y="50" width="880" height="28" rx="8" fill="#1f4e79"/>
+<text x="52" y="69" font-size="14" font-weight="bold" fill="white">1. BUILD  -  octonion world model M   (offline, gradient-free)</text>
+<text x="56" y="101" font-size="12.5" fill="#1a1a1a">PMI-SVD embeddings:        emb in R^(W x 96)</text>
+<text x="56" y="120" font-size="12.5" fill="#1a1a1a">token octonion:            o(w) = unit(emb[w][1:9])  in S^7</text>
+<text x="56" y="139" font-size="12.5" fill="#1a1a1a">IDF weight:                idf[w] = log((N+1)/(df[w]+1)) + 1</text>
+<text x="56" y="158" font-size="12.5" fill="#1a1a1a">inverted indices:          post[t] -&gt; docs ;  bpost[(a,b)] -&gt; docs   (fano-grams)</text>
+<rect x="40" y="208" width="880" height="105" rx="8" fill="#d9ead3" stroke="#2e6b34" stroke-width="1.5"/>
+<rect x="40" y="208" width="880" height="28" rx="8" fill="#2e6b34"/>
+<text x="52" y="227" font-size="14" font-weight="bold" fill="white">2. ENCODE  -  text -&gt; representations</text>
+<text x="56" y="259" font-size="12.5" fill="#1a1a1a">IDF mean-emb:              v(x) = unit( SUM_{t in x} idf[t] . emb[t] )    (96-d)</text>
+<text x="56" y="278" font-size="12.5" fill="#1a1a1a">octonion slots:            X = reshape(v, (12, 8))      (12 octonions)</text>
+<text x="56" y="297" font-size="12.5" fill="#1a1a1a">fano-gram (bigram):        fg(a,b) = o(a) (x) o(b)      ((x) = octonion product, order-sensitive)</text>
+<rect x="40" y="347" width="880" height="124" rx="8" fill="#fce5cd" stroke="#8a5a00" stroke-width="1.5"/>
+<rect x="40" y="347" width="880" height="28" rx="8" fill="#8a5a00"/>
+<text x="52" y="366" font-size="14" font-weight="bold" fill="white">3. MATCH  -  prompt P' -&gt; k nearest neighbours</text>
+<text x="56" y="398" font-size="12.5" fill="#1a1a1a">dense:     d_i   = v(P') . v(P_i)</text>
+<text x="56" y="417" font-size="12.5" fill="#1a1a1a">lexical:   L_i   = SUM_{t in P'} idf[t] . 1[t in P_i]            (entity-weighted overlap)</text>
+<text x="56" y="436" font-size="12.5" fill="#1a1a1a">fano-gram: B_i   = | bigrams(P') ∩ bigrams(P_i) |               (order-sensitive)</text>
+<text x="56" y="455" font-size="12.5" fill="#1a1a1a">score_i = d_i + 0.6 . L^_i + 3.0 . B^_i      -&gt;   nn = argtop-k(score)</text>
+<rect x="40" y="505" width="880" height="124" rx="8" fill="#e6d6f2" stroke="#7030a0" stroke-width="1.5"/>
+<rect x="40" y="505" width="880" height="28" rx="8" fill="#7030a0"/>
+<text x="52" y="524" font-size="14" font-weight="bold" fill="white">4. TRANSPORT  -  local Fano path  -&gt;  answer-region anchor</text>
+<text x="56" y="556" font-size="12.5" fill="#1a1a1a">squared Fano rotation:      R_g(theta)^2 = cos(2 theta).I + sin(2 theta).L_g ,  L_g x = e_g (x) x   (exact S^7, norm-preserving)</text>
+<text x="56" y="575" font-size="12.5" fill="#1a1a1a">matching pursuit (no grad): A=SUM&lt;x_i,t_i&gt;, B=SUM&lt;L_g x_i, t_i&gt;,  theta* = 0.5 atan2(B, A)</text>
+<text x="56" y="594" font-size="12.5" fill="#1a1a1a">fit F on { slots(P_i) -&gt; slots(A_i) }_{i in nn}   (per-slot, greedy compose)</text>
+<text x="56" y="613" font-size="12.5" fill="#1a1a1a">anchor:    g = unit( F( slots(P') ) )       (predicted answer region)</text>
+<rect x="40" y="663" width="880" height="181" rx="8" fill="#f4cccc" stroke="#9c2b2b" stroke-width="1.5"/>
+<rect x="40" y="663" width="880" height="28" rx="8" fill="#9c2b2b"/>
+<text x="52" y="682" font-size="14" font-weight="bold" fill="white">5. COMPOSE  -  compositional construction  (mantik silsilesi)</text>
+<text x="56" y="714" font-size="12.5" fill="#1a1a1a">fuzzy scan:   facts = sents( answers[nn] ) ,  drop _listy (nav + research jargon)</text>
+<text x="56" y="733" font-size="12.5" fill="#1a1a1a">topic bind:   keep facts containing entity ;  qs += 0.5 . |bigrams ∩|   (fano-gram)</text>
+<text x="56" y="752" font-size="12.5" fill="#1a1a1a">cluster:      spherical k-means -&gt; C_1..C_k ,  k &lt;= 7        (RULE OF 7 / ayristirma)</text>
+<text x="56" y="771" font-size="12.5" fill="#1a1a1a">role:         r_j = argmax( cue-count | prototype . C_j )   {def-&gt;cause-&gt;...-&gt;treatment}</text>
+<text x="56" y="790" font-size="12.5" fill="#1a1a1a">order:        sort aspects by (role_rank, -relevance)       (exposition logic chain)</text>
+<text x="56" y="809" font-size="12.5" fill="#1a1a1a">verify:       IMPLIES  R_t = C_{t+1} (x) C_t^-1 ;  prove(0,k-1) -&gt; fidelity (=1.000)</text>
+<text x="56" y="828" font-size="12.5" fill="#1a1a1a">realize:      stitch each aspect's representative sentence in chain order</text>
+<rect x="40" y="878" width="880" height="105" rx="8" fill="#e8e8e8" stroke="#444444" stroke-width="1.5"/>
+<rect x="40" y="878" width="880" height="28" rx="8" fill="#444444"/>
+<text x="52" y="897" font-size="14" font-weight="bold" fill="white">6. DECODE (flat)  -  extractive answer + honesty signal</text>
+<text x="56" y="929" font-size="12.5" fill="#1a1a1a">score(s) = 0.6(c.g) + 0.2(c.cen) + 0.2(c.v_q) + 0.15.nbr      (c = sentence vec)</text>
+<text x="56" y="948" font-size="12.5" fill="#1a1a1a">topic gate: drop s if (c . v_q) &lt; tau . max ;   MMR select m sentences</text>
+<text x="56" y="967" font-size="12.5" fill="#1a1a1a">confidence: conf = v(P') . v(P_nn1)    -&gt;   'I don't know' if conf &lt; threshold</text>
+<line x1="480" y1="174" x2="480" y2="204" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+<line x1="480" y1="313" x2="480" y2="343" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+<line x1="480" y1="471" x2="480" y2="501" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+<line x1="480" y1="629" x2="480" y2="659" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+<line x1="480" y1="844" x2="480" y2="874" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+</svg>

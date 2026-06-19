@@ -1,0 +1,30 @@
+# fetched training data (downloaded on demand by octonion_lm.py)
+corpus.txt
+corpus_*.txt
+# cached binary memory banks
+.memcache_*.npz
+__pycache__/
+*.pyc
+# fetched symptom/disease dataset
+symptoms_train.csv
+# fetched medical Q&A datasets
+*QAs.json
+answerer_cache*.npz
+questions-words.txt
+.octogpt_*
+
+mined_big.json
+
+lp_out.txt
+
+arc_data/
+arc_viz.svg
+arc_eval_*.png
+octonion_net.npz
+
+# trained OctoNet checkpoints (large build artifacts)
+octonion_net_*.npz
+octonion_net_*.npz.done
+octonion_paramnet.npz
+octonion_pathmodel.npz
+_kalman_eval.py
