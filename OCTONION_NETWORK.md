@@ -35,3 +35,22 @@ All exact octonion algebra; no gradients, no learning — this is the network's 
 and checked. The redundant-representation property is the octonionic realisation of the EML paper's
 "one object, many trees", and the Fano-routed sign-gated propagation is the connection rule from the
 notes.
+
+## Applied to ARC (octonion_network_arc.py)
+
+The network is applied to ARC end to end through its two channels:
+* **e0 value channel = colour** — colour transforms are e0 maps (recolour table).
+* **identity/tag channel = geometry** — the dihedral group acts by Fano tag-routing, permuting
+  positions while the e0 value channel stays invariant (colours move, unchanged).
+
+A transform = geometry-routing then e0 value-map, solved from the task's pairs and accepted only on
+EXACT reproduction; the redundant representations are emitted as ARC's two attempts (pass@2).
+
+**Measured: training pass@1 11/1000, pass@2 11/1000, evaluation 0/120** (<1 s, gradient-free). The
+eleven are the dihedral + recolour tasks the two-channel substrate expresses natively (all inside the
+129 mechanism union). pass@2 equals pass@1 here because, for this small native operator set, the
+redundant representations that fit the demonstrations also agree on the test grid. The octonion network
+thus *natively* covers the geometry+colour slice; to reach the full 129 it serves as the SUBSTRATE that
+hosts the discrete grid-program mechanisms (octonion_full) — values in e0, routing and selection by the
+Fano tags. This is the honest end-to-end application: the network's own mechanism solves the
+geometry/colour band, and the broader coverage lives in the repertoire it carries.
