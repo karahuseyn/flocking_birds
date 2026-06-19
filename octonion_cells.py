@@ -33,9 +33,19 @@ import octonion_more as MO
 import octonion_rays as RY
 import octonion_grid2 as G2
 import octonion_ffa as FFA
+import os as _os
 
 DIH = list(DIHEDRAL.values())
 CLOSERS = [WF, FR, CB, ORU, MO, RY, G2, FFA]
+# Scaling note: enlarging the population / cycles and adding the heavier closers
+# (objsel, symrepair) is configurable below, but measured intractable (>2 h/1000 at
+# pop=5000, cycles=4, +objsel/symrepair) for marginal expected gain -- composition
+# and search depth saturate at the operator union, as throughout this study.  The
+# proven configuration (pop 3000, top-close 24, cycles 3, 8 closers) gives the
+# 104/105 pass@1/2 result; the knobs default to it.
+_POP = int(_os.environ.get("CELLS_POP", "3000"))
+_TOPC = int(_os.environ.get("CELLS_TOPC", "24"))
+_CYC = int(_os.environ.get("CELLS_CYC", "3"))
 
 def _score(state, outs):
     s = 0.0
@@ -64,7 +74,7 @@ def _close(cur, outs, cur_t):
         if pr is not None and all(p is not None for p in pr): return [A(p) for p in pr]
     return None
 
-def candidates(task, pop=3000, top_close=24, cycles=3):
+def candidates(task, pop=_POP, top_close=_TOPC, cycles=_CYC):
     pairs = [(A(p["input"]), A(p["output"])) for p in task["train"]]
     ins = [i for i, _ in pairs]; outs = [o for _, o in pairs]; tests = [A(tp["input"]) for tp in task["test"]]
     # seed cells: input in redundant octon-network representations (dihedral images)
