@@ -54,3 +54,20 @@ thus *natively* covers the geometry+colour slice; to reach the full 129 it serve
 hosts the discrete grid-program mechanisms (octonion_full) — values in e0, routing and selection by the
 Fano tags. This is the honest end-to-end application: the network's own mechanism solves the
 geometry/colour band, and the broader coverage lives in the repertoire it carries.
+
+## Cellular, recursive ARC solver (octonion_cells.py)
+
+Each base mini-network is a representation CELL; the solver holds THOUSANDS of cells and evolves them
+in a cyclic, recursive loop — seed with the input's redundant octon-network representations (dihedral
+images), expand by Fano-routed geometry + structural moves to a population cap (~3000 cells), select
+the cells closest to the target (gradient-free survival), close the fittest with the mechanism
+repertoire; a cell reproducing every demonstration exactly is a solution. Surviving distinct solution
+cells give ARC's two attempts.
+
+**Measured: training pass@1 104/1000, pass@2 105/1000, eval 0/120** (~46 min, gradient-free). 104 are
+inside the 129 mechanism union; **one is NOVEL — ce039d91 — and it is solved only at pass@2**: its two
+candidate cells disagree on the test grid, candidate 0 (pass@1) is wrong and candidate 1 (a redundant
+octon-network representation) is correct. So the network's redundant-representation property — the
+hand-drawn design's "one object, many encodings" — delivers a genuine new ARC solve through the second
+attempt, lifting the combined union to 130. The cellular recursion reaches a strong single-pipeline
+score (104 committed) and the redundant cells turn ARC's two-attempt budget into real coverage.
